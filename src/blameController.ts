@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { GitService } from './gitService';
 import { DecorationProvider } from './decorationProvider';
 import { BlameHoverProvider } from './hoverProvider';
-import { BlameInfo } from './types';
+import { BlameInfo, RemoteInfo } from './types';
 
 /**
  * Blame 控制器：协调各组件工作
@@ -12,6 +12,7 @@ export class BlameController {
   private decorationProvider: DecorationProvider;
   private disposables: vscode.Disposable[] = [];
   private blameCache = new Map<string, Map<number, BlameInfo>>();
+  private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
 
   constructor(context: vscode.ExtensionContext) {
@@ -19,10 +20,19 @@ export class BlameController {
     this.decorationProvider = new DecorationProvider();
 
     // 注册 hover provider
-    const hoverProvider = new BlameHoverProvider((document, line) => {
-      const blameMap = this.blameCache.get(document.uri.fsPath);
-      return blameMap?.get(line);
-    });
+    const hoverProvider = new BlameHoverProvider(
+      (document, line) => {
+        const blameMap = this.blameCache.get(document.uri.fsPath);
+        return blameMap?.get(line);
+      },
+      (document) => {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+        if (!workspaceFolder) {
+          return null;
+        }
+        return this.remoteCache.get(workspaceFolder.uri.fsPath) || null;
+      }
+    );
     
     this.disposables.push(
       vscode.languages.registerHoverProvider({ scheme: 'file' }, hoverProvider)
@@ -37,9 +47,9 @@ export class BlameController {
       })
     );
 
-    // 监听可见区域变化
+    // 监听光标位置变化
     this.disposables.push(
-      vscode.window.onDidChangeTextEditorVisibleRanges(event => {
+      vscode.window.onDidChangeTextEditorSelection(event => {
         this.updateBlame(event.textEditor);
       })
     );
@@ -120,7 +130,19 @@ export class BlameController {
     }
 
     try {
+      // 获取 blame 信息
       const blameMap = await this.gitService.getBlameForFile(document);
+      
+      // 获取远程仓库信息（如果还没有缓存）
+      if (!this.remoteCache.has(workspaceFolder.uri.fsPath)) {
+        const remoteUrl = await this.gitService.getRemoteUrl(workspaceFolder);
+        if (remoteUrl) {
+          const remoteInfo = this.gitService.parseRemoteUrl(remoteUrl);
+          this.remoteCache.set(workspaceFolder.uri.fsPath, remoteInfo);
+        } else {
+          this.remoteCache.set(workspaceFolder.uri.fsPath, null);
+        }
+      }
       
       if (blameMap) {
         this.blameCache.set(document.uri.fsPath, blameMap);

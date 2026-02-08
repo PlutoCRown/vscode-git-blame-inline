@@ -136,4 +136,54 @@ export class GitService {
     this.cache.clear();
     this.cacheTimestamps.clear();
   }
+
+  /**
+   * 获取远程仓库 URL
+   */
+  async getRemoteUrl(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync('git', [
+        'config',
+        '--get',
+        'remote.origin.url'
+      ], {
+        cwd: workspaceFolder.uri.fsPath
+      });
+      
+      return stdout.trim();
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * 解析远程仓库 URL 为 Web URL
+   */
+  parseRemoteUrl(remoteUrl: string): { baseUrl: string; owner: string; repo: string } | null {
+    // 支持 HTTPS 和 SSH 格式
+    // HTTPS: https://github.com/owner/repo.git
+    // SSH: git@github.com:owner/repo.git
+    
+    const httpsMatch = remoteUrl.match(/https?:\/\/([^\/]+)\/([^\/]+)\/([^\/\.]+)(\.git)?/);
+    if (httpsMatch) {
+      const [, host, owner, repo] = httpsMatch;
+      return {
+        baseUrl: `https://${host}`,
+        owner,
+        repo
+      };
+    }
+
+    const sshMatch = remoteUrl.match(/git@([^:]+):([^\/]+)\/([^\/\.]+)(\.git)?/);
+    if (sshMatch) {
+      const [, host, owner, repo] = sshMatch;
+      return {
+        baseUrl: `https://${host}`,
+        owner,
+        repo
+      };
+    }
+
+    return null;
+  }
 }

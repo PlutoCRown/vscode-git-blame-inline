@@ -11,32 +11,36 @@ export class DecorationProvider {
   constructor() {
     this.decorationType = vscode.window.createTextEditorDecorationType({
       after: {
-        color: new vscode.ThemeColor('editorLineNumber.foreground'),
+        // 使用更低对比度的颜色，类似 GitLens
+        color: new vscode.ThemeColor('editorCodeLens.foreground'),
         margin: '0 0 0 3em',
-        fontStyle: 'italic'
+        fontStyle: 'normal',
+        fontWeight: 'normal'
       },
       rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
     });
   }
 
   /**
-   * 更新编辑器的装饰
+   * 更新编辑器的装饰（支持多光标）
    */
   updateDecorations(editor: vscode.TextEditor, blameMap: Map<number, BlameInfo>): void {
     const decorations: vscode.DecorationOptions[] = [];
 
-    // 只为可见区域的行创建装饰
-    const visibleRanges = editor.visibleRanges;
-    
-    for (const range of visibleRanges) {
-      for (let lineNum = range.start.line; lineNum <= range.end.line; lineNum++) {
-        const blameInfo = blameMap.get(lineNum + 1); // blame 行号从 1 开始
-        
-        if (blameInfo) {
-          const line = editor.document.lineAt(lineNum);
-          const decoration = this.createDecoration(line, blameInfo);
-          decorations.push(decoration);
-        }
+    // 收集所有光标所在的行号（去重）
+    const cursorLines = new Set<number>();
+    for (const selection of editor.selections) {
+      cursorLines.add(selection.active.line);
+    }
+
+    // 为每个光标所在行创建装饰
+    for (const lineNum of cursorLines) {
+      const blameInfo = blameMap.get(lineNum + 1); // blame 行号从 1 开始
+      
+      if (blameInfo) {
+        const line = editor.document.lineAt(lineNum);
+        const decoration = this.createDecoration(line, blameInfo);
+        decorations.push(decoration);
       }
     }
 

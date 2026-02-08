@@ -17,6 +17,15 @@ export interface BlameInfo {
 }
 
 /**
+ * 远程仓库信息
+ */
+export interface RemoteInfo {
+  baseUrl: string;
+  owner: string;
+  repo: string;
+}
+
+/**
  * 文件 Blame 缓存
  */
 export interface FileBlameCache {
