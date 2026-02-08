@@ -1,8 +1,8 @@
 # Git Blame Inline
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/PlutoCRown.git-blame-inline?style=flat-square&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-inline)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/PlutoCRown.git-blame-inline?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-inline)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/PlutoCRown.git-blame-inline?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-inline)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/PlutoCRown.git-blame-lite?style=flat-square&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-lite)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/PlutoCRown.git-blame-lite?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-lite)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/PlutoCRown.git-blame-lite?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-lite)
 [![License](https://img.shields.io/github/license/PlutoCRown/vscode-git-blame-inline?style=flat-square)](https://github.com/PlutoCRown/vscode-git-blame-inline/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/PlutoCRown/vscode-git-blame-inline?style=flat-square&logo=github)](https://github.com/PlutoCRown/vscode-git-blame-inline)
 
@@ -57,8 +57,8 @@
 
 ## 📋 命令
 
-- **Git Blame 行内显示: 切换行内 Blame** - 切换行内 blame 标注的显示/隐藏
-- **Git Blame 行内显示: 显示提交差异** - 查看特定提交的更改内容
+- **Git Blame 轻量版: 切换行内 Blame** - 切换行内 blame 标注的显示/隐藏
+- **Git Blame 轻量版: 显示提交差异** - 查看特定提交的更改内容
 - **暂存更改...** - 使用自定义消息暂存已暂存或未暂存的更改
 
 ## ⚙️ 配置选项
@@ -96,7 +96,7 @@
 ### 键盘快捷键
 你可以为命令设置自定义快捷键：
 1. 打开键盘快捷键设置（`Cmd+K Cmd+S` / `Ctrl+K Ctrl+S`）
-2. 搜索 "Git Blame Inline"
+2. 搜索 "Git Blame Lite" 或 "Git Blame 轻量版"
 3. 分配你喜欢的快捷键
 
 ## ❓ 常见问题
@@ -105,12 +105,12 @@
 
 虽然 GitLens 是一个强大的工具，但本插件提供了一个专注于行内 blame 显示的轻量级替代方案：
 
-- **轻量高效** - GitLens 会占用大量内存（启动后可达 1.2GB 以上），而 Git Blame Inline 专注于最小化和高效运行
+- **轻量高效** - GitLens 会占用大量内存（启动后可达 1.2GB 以上），而 Git Blame Lite 专注于最小化和高效运行
 - **无商业化** - 本插件完全免费开源，没有任何商业/付费功能提示或付费墙
 - **功能专注** - 提供核心的 blame 功能，无需复杂的完整 Git 工具套件
 - **更好的性能** - 专门为行内 blame 显示优化，采用智能缓存和最小资源占用
 
-如果您只需要 blame 信息并偏好轻量级解决方案，Git Blame Inline 是完美的选择。如果您需要全面的 Git 功能且不介意资源占用，GitLens 可能更适合您。
+如果您只需要 blame 信息并偏好轻量级解决方案，Git Blame Lite 是完美的选择。如果您需要全面的 Git 功能且不介意资源占用，GitLens 可能更适合您。
 
 ## 🤝 贡献
 

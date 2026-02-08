@@ -1,5 +1,5 @@
 {
-    "name": "git-blame-inline",
+    "name": "git-blame-lite",
     "displayName": "%displayName%",
     "description": "%description%",
     "version": "1.0.0",
@@ -49,15 +49,15 @@
     "contributes": {
         "commands": [
             {
-                "command": "git-blame-inline.toggle",
+                "command": "git-blame-lite.toggle",
                 "title": "%command.toggle%"
             },
             {
-                "command": "git-blame-inline.showCommitDiff",
+                "command": "git-blame-lite.showCommitDiff",
                 "title": "%command.showCommitDiff%"
             },
             {
-                "command": "git-blame-inline.stashChanges",
+                "command": "git-blame-lite.stashChanges",
                 "title": "%command.stashChanges%",
                 "icon": "$(archive)"
             }
@@ -65,7 +65,7 @@
         "menus": {
             "scm/resourceGroup/context": [
                 {
-                    "command": "git-blame-inline.stashChanges",
+                    "command": "git-blame-lite.stashChanges",
                     "when": "scmProvider == git && config.gitBlameInline.showStashButton",
                     "group": "inline"
                 }

@@ -76,7 +76,7 @@ export class BlameHoverProvider implements vscode.HoverProvider {
     BlameController.currentCommitHash = blame.hash;
     
     // 添加查看差异命令链接（不传参数，命令内部从全局变量读取）
-    md.appendMarkdown(`[${t.hover.viewChanges}](command:git-blame-inline.showCommitDiff)`);
+    md.appendMarkdown(`[${t.hover.viewChanges}](command:git-blame-lite.showCommitDiff)`);
     
     md.appendMarkdown(`\n\n</div>`);
 

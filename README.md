@@ -1,8 +1,8 @@
 # Git Blame Inline
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/PlutoCRown.git-blame-inline?style=flat-square&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-inline)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/PlutoCRown.git-blame-inline?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-inline)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/PlutoCRown.git-blame-inline?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-inline)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/PlutoCRown.git-blame-lite?style=flat-square&label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-lite)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/PlutoCRown.git-blame-lite?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-lite)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/PlutoCRown.git-blame-lite?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=PlutoCRown.git-blame-lite)
 [![License](https://img.shields.io/github/license/PlutoCRown/vscode-git-blame-inline?style=flat-square)](https://github.com/PlutoCRown/vscode-git-blame-inline/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/PlutoCRown/vscode-git-blame-inline?style=flat-square&logo=github)](https://github.com/PlutoCRown/vscode-git-blame-inline)
 
@@ -57,8 +57,8 @@ Easily stash staged or unstaged changes with custom messages from the Source Con
 
 ## 📋 Commands
 
-- **Git Blame Inline: Toggle Inline Blame** - Toggle the display of inline blame annotations
-- **Git Blame Inline: Show Commit Diff** - View the changes made in a specific commit
+- **Git Blame Lite: Toggle Inline Blame** - Toggle the display of inline blame annotations
+- **Git Blame Lite: Show Commit Diff** - View the changes made in a specific commit
 - **Stash Changes...** - Stash your staged or unstaged changes with a custom message
 
 ## ⚙️ Configuration
@@ -96,7 +96,7 @@ Right-click on "Changes" or "Staged Changes" in the Source Control panel to find
 ### Keyboard Shortcuts
 You can set custom keyboard shortcuts for commands:
 1. Open Keyboard Shortcuts (`Cmd+K Cmd+S` / `Ctrl+K Ctrl+S`)
-2. Search for "Git Blame Inline"
+2. Search for "Git Blame Lite"
 3. Assign your preferred shortcuts
 
 ## ❓ FAQ
@@ -105,12 +105,12 @@ You can set custom keyboard shortcuts for commands:
 
 While GitLens is a powerful tool, this extension offers a lightweight alternative focused specifically on inline blame display:
 
-- **Lightweight & Fast** - GitLens can consume significant memory (up to 1.2GB+ after startup), while Git Blame Inline is designed to be minimal and efficient
+- **Lightweight & Fast** - GitLens can consume significant memory (up to 1.2GB+ after startup), while Git Blame Lite is designed to be minimal and efficient
 - **No Commercial Features** - This extension is completely free and open-source without any commercial/premium feature prompts or paywalls
 - **Focused Functionality** - Provides core blame features without the complexity of a full Git suite
 - **Better Performance** - Optimized specifically for inline blame display with smart caching and minimal resource usage
 
-If you only need blame information and prefer a lightweight solution, Git Blame Inline is the perfect choice. If you need comprehensive Git features and don't mind the resource usage, GitLens might be better for you.
+If you only need blame information and prefer a lightweight solution, Git Blame Lite is the perfect choice. If you need comprehensive Git features and don't mind the resource usage, GitLens might be better for you.
 
 ## 🤝 Contributing
 

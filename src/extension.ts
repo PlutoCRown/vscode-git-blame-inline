@@ -15,7 +15,7 @@ let diffDocProvider: DiffDocProvider | undefined;
  * 扩展激活
  */
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Git Blame Inline extension is now active');
+  console.log('Git Blame Lite extension is now active');
 
   // 注册 Diff 文档提供器
   diffDocProvider = new DiffDocProvider();
@@ -31,14 +31,14 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(blameController);
 
   // 注册切换命令
-  const toggleCommand = vscode.commands.registerCommand('git-blame-inline.toggle', () => {
+  const toggleCommand = vscode.commands.registerCommand('git-blame-lite.toggle', () => {
     blameController?.toggle();
   });
   context.subscriptions.push(toggleCommand);
 
   // 注册查看 commit diff 命令
   const showCommitDiffCommand = vscode.commands.registerCommand(
-    'git-blame-inline.showCommitDiff',
+    'git-blame-lite.showCommitDiff',
     async (commitHash?: string) => {
       // 如果没有传递参数，从全局变量获取
       const hash = commitHash || (await import('./blameController')).BlameController.currentCommitHash;
@@ -54,7 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册 Stash 命令
   const stashCommand = vscode.commands.registerCommand(
-    'git-blame-inline.stashChanges',
+    'git-blame-lite.stashChanges',
     async (...args: any[]) => {
       await stashChanges(args[0]);
     }
