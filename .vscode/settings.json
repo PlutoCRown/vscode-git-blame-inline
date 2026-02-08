@@ -1,12 +1,9 @@
 {
   "files.exclude": {
-    "node_modules": true,
-    "gitlens-reference": true,
     "dist": false
   },
   "search.exclude": {
     "node_modules": true,
-    "gitlens-reference": true,
     "dist": true,
     "bun.lock": true
   }

@@ -11,13 +11,14 @@ export class DecorationProvider {
   constructor() {
     this.decorationType = vscode.window.createTextEditorDecorationType({
       after: {
-        // 使用更低对比度的颜色，类似 GitLens
-        color: new vscode.ThemeColor('editorCodeLens.foreground'),
+        // 使用 GitLens 的颜色：带透明度的灰色，非常低对比度
+        color: '#99999959',
         margin: '0 0 0 3em',
         fontStyle: 'normal',
-        fontWeight: 'normal'
+        fontWeight: 'normal',
+        textDecoration: 'none'
       },
-      rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
+      rangeBehavior: vscode.DecorationRangeBehavior.OpenOpen // 使用 OpenOpen 防止闪烁
     });
   }
 

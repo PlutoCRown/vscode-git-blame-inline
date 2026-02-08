@@ -14,6 +14,7 @@ export class BlameController {
   private blameCache = new Map<string, Map<number, BlameInfo>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
+  private updateTimeout: NodeJS.Timeout | undefined;
 
   constructor(context: vscode.ExtensionContext) {
     this.gitService = new GitService();
@@ -47,10 +48,19 @@ export class BlameController {
       })
     );
 
-    // 监听光标位置变化
+    // 监听光标位置变化（使用防抖避免过于频繁的更新）
     this.disposables.push(
       vscode.window.onDidChangeTextEditorSelection(event => {
-        this.updateBlame(event.textEditor);
+        // 清除之前的定时器
+        if (this.updateTimeout) {
+          clearTimeout(this.updateTimeout);
+        }
+        // 立即清除装饰，然后延迟更新（防止输入时闪烁）
+        this.clearDecorationsOnly(event.textEditor);
+        // 使用短暂延迟让输入完成
+        this.updateTimeout = setTimeout(() => {
+          this.updateBlame(event.textEditor);
+        }, 50);
       })
     );
 
@@ -182,9 +192,19 @@ export class BlameController {
   }
 
   /**
+   * 仅清除装饰（不清除缓存）
+   */
+  private clearDecorationsOnly(editor: vscode.TextEditor): void {
+    this.decorationProvider.clearDecorations(editor);
+  }
+
+  /**
    * 释放资源
    */
   dispose(): void {
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
     this.disposables.forEach(d => d.dispose());
     this.decorationProvider.dispose();
     this.gitService.clearAllCache();
