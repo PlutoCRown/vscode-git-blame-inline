@@ -112,6 +112,16 @@ While GitLens is a powerful tool, this extension offers a lightweight alternativ
 
 If you only need blame information and prefer a lightweight solution, Git Blame Lite is the perfect choice. If you need comprehensive Git features and don't mind the resource usage, GitLens might be better for you.
 
+### Why not use other blame extensions like GitBlame or GitBlameInline?
+
+There are other blame extensions available, but Git Blame Lite offers a better experience:
+
+- **GitBlame** - The information display is inconvenient and not intuitive, making it harder to quickly see blame information while coding
+- **GitBlameInline** - Limited to showing only a single line of information, which doesn't provide enough context compared to GitLens or Git Blame Lite
+- **Git Blame Lite** - Combines the best of both worlds: convenient inline display with rich hover details, multi-line commit message support, and comprehensive features like viewing diffs and GitHub/GitLab integration
+
+Git Blame Lite is designed to be both lightweight and feature-rich, offering a much better user experience than basic blame extensions.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.

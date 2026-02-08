@@ -112,6 +112,16 @@
 
 如果您只需要 blame 信息并偏好轻量级解决方案，Git Blame Lite 是完美的选择。如果您需要全面的 Git 功能且不介意资源占用，GitLens 可能更适合您。
 
+### 为什么不用 GitBlame、GitBlameInline 等其他插件？
+
+市场上有其他 blame 插件，但 Git Blame Lite 提供了更好的体验：
+
+- **GitBlame** - 信息显示不方便，不够直观，在编码时难以快速查看 blame 信息
+- **GitBlameInline** - 只能显示一行信息，无法提供足够的上下文，远不如 GitLens 或 Git Blame Lite 好用
+- **Git Blame Lite** - 集两者之长：方便的行内显示 + 丰富的悬停详情 + 多行提交信息支持 + 完整功能（查看差异、GitHub/GitLab 集成等）
+
+Git Blame Lite 既轻量又功能丰富，提供了比基础 blame 插件更好的用户体验。
+
 ## 🤝 贡献
 
 欢迎贡献！请随时提交问题和拉取请求。
