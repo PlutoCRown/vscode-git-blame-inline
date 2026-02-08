@@ -1,7 +1,7 @@
 {
     "name": "git-blame-inline",
-    "displayName": "Git Blame Inline",
-    "description": "在代码行尾显示 Git Blame 信息，悬停查看提交详情",
+    "displayName": "%displayName%",
+    "description": "%description%",
     "version": "0.0.1",
     "publisher": "PlutoCRown",
     "engines": {
@@ -19,15 +19,15 @@
         "commands": [
             {
                 "command": "git-blame-inline.toggle",
-                "title": "Git Blame Inline: Toggle Inline Blame"
+                "title": "%command.toggle%"
             },
             {
                 "command": "git-blame-inline.showCommitDiff",
-                "title": "Git Blame Inline: Show Commit Diff"
+                "title": "%command.showCommitDiff%"
             },
             {
                 "command": "git-blame-inline.stashChanges",
-                "title": "Stash Changes...",
+                "title": "%command.stashChanges%",
                 "icon": "$(archive)"
             }
         ],
@@ -41,27 +41,27 @@
             ]
         },
         "configuration": {
-            "title": "Git Blame Inline",
+            "title": "%config.title%",
             "properties": {
                 "gitBlameInline.enabled": {
                     "type": "boolean",
                     "default": true,
-                    "description": "启用/禁用行内 blame 信息显示"
+                    "description": "%config.enabled%"
                 },
                 "gitBlameInline.format": {
                     "type": "string",
                     "default": "{author}, {time} • {message}",
-                    "description": "Blame 信息显示格式。可用变量：{author}, {time}, {message}, {hash}"
+                    "description": "%config.format%"
                 },
                 "gitBlameInline.messageLength": {
                     "type": "number",
                     "default": 50,
-                    "description": "提交信息最大显示长度"
+                    "description": "%config.messageLength%"
                 },
                 "gitBlameInline.showStashButton": {
                     "type": "boolean",
                     "default": true,
-                    "description": "在源代码管理资源组中显示 Stash 按钮"
+                    "description": "%config.showStashButton%"
                 }
             }
         }

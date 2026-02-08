@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 /**
  * 工具函数
  */
@@ -18,22 +20,22 @@ export function formatRelativeTime(timestamp: number): string {
   const diff = now - timestamp;
 
   if (diff < 60) {
-    return '刚刚';
+    return t.time.justNow;
   } else if (diff < 3600) {
     const minutes = Math.floor(diff / 60);
-    return `${minutes}分钟前`;
+    return t.time.minutesAgo(minutes);
   } else if (diff < 86400) {
     const hours = Math.floor(diff / 3600);
-    return `${hours}小时前`;
+    return t.time.hoursAgo(hours);
   } else if (diff < 2592000) {
     const days = Math.floor(diff / 86400);
-    return `${days}天前`;
+    return t.time.daysAgo(days);
   } else if (diff < 31536000) {
     const months = Math.floor(diff / 2592000);
-    return `${months}个月前`;
+    return t.time.monthsAgo(months);
   } else {
     const years = Math.floor(diff / 31536000);
-    return `${years}年前`;
+    return t.time.yearsAgo(years);
   }
 }
 
@@ -52,7 +54,11 @@ export function truncateText(text: string, maxLength: number): string {
  */
 export function formatDate(timestamp: number): string {
   const date = new Date(timestamp * 1000);
-  return date.toLocaleString('zh-CN', {
+  // 使用 VS Code 的语言环境
+  const vscode = require('vscode');
+  const locale = vscode.env.language || 'en';
+  
+  return date.toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

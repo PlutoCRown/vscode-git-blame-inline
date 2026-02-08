@@ -3,6 +3,7 @@ import { GitService } from './gitService';
 import { DecorationProvider } from './decorationProvider';
 import { BlameHoverProvider } from './hoverProvider';
 import { BlameInfo, RemoteInfo } from './types';
+import { t } from './i18n';
 
 /**
  * Blame 控制器：协调各组件工作
@@ -188,7 +189,7 @@ export class BlameController {
     }
 
     vscode.window.showInformationMessage(
-      `Git Blame Inline ${this.enabled ? '已启用' : '已禁用'}`
+      this.enabled ? t.success.enabled : t.success.disabled
     );
   }
 

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { BlameInfo, RemoteInfo } from './types';
 import { formatDate } from './utils';
 import { BlameController } from './blameController';
+import { t } from './i18n';
 
 /**
  * 悬停提示提供器：显示完整的 commit 信息
@@ -42,40 +43,40 @@ export class BlameHoverProvider implements vscode.HoverProvider {
 
     // 创建格式化的 commit 信息（使用 HTML 限制宽度）
     md.appendMarkdown(`<div style="max-width: 600px; word-wrap: break-word;">\n\n`);
-    md.appendMarkdown(`### Git Blame\n\n`);
+    md.appendMarkdown(`### ${t.hover.title}\n\n`);
 
-    md.appendMarkdown(`**Commit:** \`${shortHash}\`\n\n`);
+    md.appendMarkdown(`**${t.hover.commit}:** \`${shortHash}\`\n\n`);
     
     // 作者信息（GitHub/GitLab 用户链接）
     if (remoteInfo) {
       const authorUrl = this.getAuthorUrl(remoteInfo, blame.authorEmail);
       if (authorUrl) {
-        md.appendMarkdown(`**作者:** [${blame.author}](${authorUrl})\n\n`);
+        md.appendMarkdown(`**${t.hover.author}:** [${blame.author}](${authorUrl})\n\n`);
       } else {
-        md.appendMarkdown(`**作者:** ${blame.author}\n\n`);
+        md.appendMarkdown(`**${t.hover.author}:** ${blame.author}\n\n`);
       }
     } else {
-      md.appendMarkdown(`**作者:** ${blame.author}\n\n`);
+      md.appendMarkdown(`**${t.hover.author}:** ${blame.author}\n\n`);
     }
 
-    md.appendMarkdown(`**邮箱:** ${blame.authorEmail}\n\n`);
-    md.appendMarkdown(`**时间:** ${formattedDate}\n\n`);
+    md.appendMarkdown(`**${t.hover.email}:** ${blame.authorEmail}\n\n`);
+    md.appendMarkdown(`**${t.hover.time}:** ${formattedDate}\n\n`);
     
-    md.appendMarkdown(`**提交信息:** ${blame.summary}\n\n`);
+    md.appendMarkdown(`**${t.hover.message}:** ${blame.summary}\n\n`);
 
     // 添加操作链接
     md.appendMarkdown(`---\n\n`);
     
     if (remoteInfo) {
       const commitUrl = this.getCommitUrl(remoteInfo, blame.hash);
-      md.appendMarkdown(`[在 ${remoteInfo.host} 上查看](${commitUrl}) | `);
+      md.appendMarkdown(`[${t.hover.viewOn} ${remoteInfo.host}](${commitUrl}) | `);
     }
     
     // 保存当前 commit hash 到全局变量，供命令使用
     BlameController.currentCommitHash = blame.hash;
     
     // 添加查看差异命令链接（不传参数，命令内部从全局变量读取）
-    md.appendMarkdown(`[查看更改](command:git-blame-inline.showCommitDiff)`);
+    md.appendMarkdown(`[${t.hover.viewChanges}](command:git-blame-inline.showCommitDiff)`);
     
     md.appendMarkdown(`\n\n</div>`);
 

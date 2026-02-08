@@ -1,0 +1,12 @@
+{
+    "displayName": "Git Blame Inline",
+    "description": "Display Git Blame information at the end of code lines with hover details",
+    "command.toggle": "Git Blame Inline: Toggle Inline Blame",
+    "command.showCommitDiff": "Git Blame Inline: Show Commit Diff",
+    "command.stashChanges": "Stash Changes...",
+    "config.title": "Git Blame Inline",
+    "config.enabled": "Enable/disable inline blame information display",
+    "config.format": "Blame information display format. Available variables: {author}, {time}, {message}, {hash}",
+    "config.messageLength": "Maximum display length for commit messages",
+    "config.showStashButton": "Show Stash button in source control resource groups"
+}

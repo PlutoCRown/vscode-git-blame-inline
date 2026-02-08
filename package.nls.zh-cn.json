@@ -1,0 +1,12 @@
+{
+    "displayName": "Git Blame 行内显示",
+    "description": "在代码行尾显示 Git Blame 信息，悬停查看提交详情",
+    "command.toggle": "Git Blame 行内显示: 切换行内 Blame",
+    "command.showCommitDiff": "Git Blame 行内显示: 显示提交差异",
+    "command.stashChanges": "暂存更改...",
+    "config.title": "Git Blame 行内显示",
+    "config.enabled": "启用/禁用行内 blame 信息显示",
+    "config.format": "Blame 信息显示格式。可用变量：{author}, {time}, {message}, {hash}",
+    "config.messageLength": "提交信息最大显示长度",
+    "config.showStashButton": "在源代码管理资源组中显示 Stash 按钮"
+}

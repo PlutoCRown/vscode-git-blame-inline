@@ -4,6 +4,7 @@ import { DiffDocProvider, encodeDiffDocUri } from './diffDocProvider';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import { t } from './i18n';
 
 const execFileAsync = promisify(execFile);
 
@@ -45,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (hash) {
         await showCommitDiff(hash);
       } else {
-        vscode.window.showErrorMessage('无法获取 commit 信息');
+        vscode.window.showErrorMessage(t.error.noCommitHash);
       }
     }
   );
@@ -66,7 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
  */
 async function showCommitDiff(commitHash: string): Promise<void> {
   if (!commitHash || typeof commitHash !== 'string') {
-    vscode.window.showErrorMessage('无法显示提交差异: 缺少 commit hash');
+    vscode.window.showErrorMessage(`${t.error.showDiffFailed}: ${t.error.noCommitHash}`);
     console.error('showCommitDiff called with invalid commitHash:', commitHash);
     return;
   }
@@ -74,13 +75,13 @@ async function showCommitDiff(commitHash: string): Promise<void> {
   try {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-      vscode.window.showErrorMessage('无法显示提交差异: 没有打开的编辑器');
+      vscode.window.showErrorMessage(t.error.noEditor);
       return;
     }
 
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
     if (!workspaceFolder) {
-      vscode.window.showErrorMessage('无法显示提交差异: 文件不在工作区中');
+      vscode.window.showErrorMessage(t.error.notInWorkspace);
       return;
     }
 
@@ -116,7 +117,7 @@ async function showCommitDiff(commitHash: string): Promise<void> {
 
   } catch (error: any) {
     console.error('Failed to show commit diff:', error);
-    vscode.window.showErrorMessage(`无法显示提交差异: ${error.message || error}`);
+    vscode.window.showErrorMessage(`${t.error.showDiffFailed}: ${error.message || error}`);
   }
 }
 
@@ -130,13 +131,13 @@ async function stashChanges(resourceGroup: any): Promise<void> {
     // 获取 Git 扩展 API
     const gitExtension = vscode.extensions.getExtension('vscode.git');
     if (!gitExtension) {
-      vscode.window.showErrorMessage('Git 扩展未安装或未启用');
+      vscode.window.showErrorMessage(t.error.noGitExtension);
       return;
     }
 
     const git = gitExtension.exports.getAPI(1);
     if (git.repositories.length === 0) {
-      vscode.window.showErrorMessage('没有打开的 Git 仓库');
+      vscode.window.showErrorMessage(t.error.noRepository);
       return;
     }
 
@@ -149,22 +150,22 @@ async function stashChanges(resourceGroup: any): Promise<void> {
     console.log('Resource group ID:', groupId);
 
     let isStaged = false;
-    let groupLabel = '更改';
+    let groupLabel = t.stash.unstaged;
 
     if (groupId === 'index') {
       isStaged = true;
-      groupLabel = '暂存的更改';
+      groupLabel = t.stash.staged;
     } else if (groupId === 'workingTree') {
       isStaged = false;
-      groupLabel = '更改';
+      groupLabel = t.stash.unstaged;
     } else {
       // 如果无法识别资源组，提示用户选择
       const choice = await vscode.window.showQuickPick(
         [
-          { label: '暂存的更改', value: 'staged' },
-          { label: '更改', value: 'unstaged' }
+          { label: t.stash.staged, value: 'staged' },
+          { label: t.stash.unstaged, value: 'unstaged' }
         ],
-        { placeHolder: '选择要 stash 的更改类型' }
+        { placeHolder: t.stash.selectType }
       );
 
       if (!choice) {
@@ -177,9 +178,9 @@ async function stashChanges(resourceGroup: any): Promise<void> {
 
     // 弹出输入框让用户输入 stash 消息
     const message = await vscode.window.showInputBox({
-      prompt: `输入 stash 消息（${groupLabel}）`,
-      placeHolder: '可选的 stash 描述信息',
-      value: `Stashed ${groupLabel} at ${new Date().toLocaleString('zh-CN')}`
+      prompt: `${t.stash.inputMessage}（${groupLabel}）`,
+      placeHolder: t.stash.inputPlaceholder,
+      value: `Stashed ${groupLabel} at ${new Date().toLocaleString()}`
     });
 
     // 用户取消了输入
@@ -195,9 +196,9 @@ async function stashChanges(resourceGroup: any): Promise<void> {
         'push',
         '--staged',
         '-m',
-        message || 'Stashed staged changes'
+        message || t.stash.defaultStagedMessage
       ], { cwd });
-      console.log('✅ 暂存的更改已 stash');
+      console.log(t.success.stagedStashed);
     } else {
       // Stash 未暂存的更改（包括未跟踪的文件）
       await execFileAsync('git', [
@@ -206,14 +207,14 @@ async function stashChanges(resourceGroup: any): Promise<void> {
         '--keep-index',
         '--include-untracked',
         '-m',
-        message || 'Stashed unstaged changes'
+        message || t.stash.defaultUnstagedMessage
       ], { cwd });
-      console.log('✅ 更改已 stash（保留已暂存的更改）');
+      console.log(t.success.unstagedStashed);
     }
 
   } catch (error: any) {
     console.error('Failed to stash changes:', error);
-    vscode.window.showErrorMessage(`Stash 失败: ${error.message}`);
+    vscode.window.showErrorMessage(`${t.error.stashFailed}: ${error.message}`);
   }
 }
 
