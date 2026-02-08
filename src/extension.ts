@@ -52,13 +52,13 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(showCommitDiffCommand);
 
   // 注册 Stash 命令
-  const stashAllCommand = vscode.commands.registerCommand(
-    'git-blame-inline.stashAllChanges',
-    async () => {
-      await stashAllChanges();
+  const stashCommand = vscode.commands.registerCommand(
+    'git-blame-inline.stashChanges',
+    async (...args: any[]) => {
+      await stashChanges(args[0]);
     }
   );
-  context.subscriptions.push(stashAllCommand);
+  context.subscriptions.push(stashCommand);
 }
 
 /**
@@ -121,32 +121,99 @@ async function showCommitDiff(commitHash: string): Promise<void> {
 }
 
 /**
- * Stash 所有更改（包括未跟踪文件）
+ * Stash 更改
  */
-async function stashAllChanges(): Promise<void> {
+async function stashChanges(resourceGroup: any): Promise<void> {
   try {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      vscode.window.showErrorMessage('没有打开的工作区');
+    console.log('stashChanges called with:', resourceGroup);
+
+    // 获取 Git 扩展 API
+    const gitExtension = vscode.extensions.getExtension('vscode.git');
+    if (!gitExtension) {
+      vscode.window.showErrorMessage('Git 扩展未安装或未启用');
       return;
     }
 
-    const cwd = workspaceFolders[0].uri.fsPath;
-    const timestamp = new Date().toLocaleString('zh-CN');
+    const git = gitExtension.exports.getAPI(1);
+    if (git.repositories.length === 0) {
+      vscode.window.showErrorMessage('没有打开的 Git 仓库');
+      return;
+    }
 
-    // 执行 git stash 命令
-    await execFileAsync('git', [
-      'stash',
-      'push',
-      '--include-untracked',
-      '-m',
-      `Stashed at ${timestamp}`
-    ], { cwd });
+    // 获取当前仓库
+    const repo = git.repositories[0];
+    const cwd = repo.rootUri.fsPath;
 
-    vscode.window.showInformationMessage('✅ 所有更改已暂存（包括未跟踪文件）');
+    // 判断是哪个资源组
+    const groupId = resourceGroup?.id;
+    console.log('Resource group ID:', groupId);
+
+    let isStaged = false;
+    let groupLabel = '更改';
+
+    if (groupId === 'index') {
+      isStaged = true;
+      groupLabel = '暂存的更改';
+    } else if (groupId === 'workingTree') {
+      isStaged = false;
+      groupLabel = '更改';
+    } else {
+      // 如果无法识别资源组，提示用户选择
+      const choice = await vscode.window.showQuickPick(
+        [
+          { label: '暂存的更改', value: 'staged' },
+          { label: '更改', value: 'unstaged' }
+        ],
+        { placeHolder: '选择要 stash 的更改类型' }
+      );
+
+      if (!choice) {
+        return;
+      }
+
+      isStaged = choice.value === 'staged';
+      groupLabel = choice.label;
+    }
+
+    // 弹出输入框让用户输入 stash 消息
+    const message = await vscode.window.showInputBox({
+      prompt: `输入 stash 消息（${groupLabel}）`,
+      placeHolder: '可选的 stash 描述信息',
+      value: `Stashed ${groupLabel} at ${new Date().toLocaleString('zh-CN')}`
+    });
+
+    // 用户取消了输入
+    if (message === undefined) {
+      return;
+    }
+
+    // 根据资源组类型执行不同的 stash 命令
+    if (isStaged) {
+      // Stash 暂存的更改
+      await execFileAsync('git', [
+        'stash',
+        'push',
+        '--staged',
+        '-m',
+        message || 'Stashed staged changes'
+      ], { cwd });
+      vscode.window.showInformationMessage('✅ 暂存的更改已 stash');
+    } else {
+      // Stash 未暂存的更改（包括未跟踪的文件）
+      await execFileAsync('git', [
+        'stash',
+        'push',
+        '--keep-index',
+        '--include-untracked',
+        '-m',
+        message || 'Stashed unstaged changes'
+      ], { cwd });
+      vscode.window.showInformationMessage('✅ 更改已 stash（保留已暂存的更改）');
+    }
+
   } catch (error: any) {
     console.error('Failed to stash changes:', error);
-    vscode.window.showErrorMessage(`暂存失败: ${error.message}`);
+    vscode.window.showErrorMessage(`Stash 失败: ${error.message}`);
   }
 }
 

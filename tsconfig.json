@@ -23,6 +23,6 @@
         "node_modules",
         "dist",
         "gitlens-reference",
-        "vscode-git-graph"
+        "vscode-git-graph/**"
     ]
 }

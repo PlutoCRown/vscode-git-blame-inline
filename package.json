@@ -26,17 +26,17 @@
                 "title": "Git Blame Inline: Show Commit Diff"
             },
             {
-                "command": "git-blame-inline.stashAllChanges",
-                "title": "Stash All Changes (Include Untracked)",
+                "command": "git-blame-inline.stashChanges",
+                "title": "Stash Changes...",
                 "icon": "$(archive)"
             }
         ],
         "menus": {
-            "scm/title": [
+            "scm/resourceGroup/context": [
                 {
-                    "command": "git-blame-inline.stashAllChanges",
-                    "group": "navigation",
-                    "when": "scmProvider == git"
+                    "command": "git-blame-inline.stashChanges",
+                    "when": "scmProvider == git",
+                    "group": "inline"
                 }
             ]
         },
