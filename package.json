@@ -44,8 +44,8 @@
         }
     },
     "scripts": {
-        "dev": "bun build src/extension.ts --outdir dist --watch --external vscode --sourcemap=external",
-        "build": "bun build src/extension.ts --outdir dist --minify --external vscode",
+        "dev": "bun build src/extension.ts --outdir dist --watch --external vscode --target=node --sourcemap=external",
+        "build": "bun build src/extension.ts --outdir dist --minify --external vscode --target=node",
         "package": "bun run build && vsce package",
         "vscode:prepublish": "bun run build"
     },
