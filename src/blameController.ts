@@ -1,0 +1,170 @@
+import * as vscode from 'vscode';
+import { GitService } from './gitService';
+import { DecorationProvider } from './decorationProvider';
+import { BlameHoverProvider } from './hoverProvider';
+import { BlameInfo } from './types';
+
+/**
+ * Blame 控制器：协调各组件工作
+ */
+export class BlameController {
+  private gitService: GitService;
+  private decorationProvider: DecorationProvider;
+  private disposables: vscode.Disposable[] = [];
+  private blameCache = new Map<string, Map<number, BlameInfo>>();
+  private enabled = true;
+
+  constructor(context: vscode.ExtensionContext) {
+    this.gitService = new GitService();
+    this.decorationProvider = new DecorationProvider();
+
+    // 注册 hover provider
+    const hoverProvider = new BlameHoverProvider((document, line) => {
+      const blameMap = this.blameCache.get(document.uri.fsPath);
+      return blameMap?.get(line);
+    });
+    
+    this.disposables.push(
+      vscode.languages.registerHoverProvider({ scheme: 'file' }, hoverProvider)
+    );
+
+    // 监听编辑器切换
+    this.disposables.push(
+      vscode.window.onDidChangeActiveTextEditor(editor => {
+        if (editor) {
+          this.updateBlame(editor);
+        }
+      })
+    );
+
+    // 监听可见区域变化
+    this.disposables.push(
+      vscode.window.onDidChangeTextEditorVisibleRanges(event => {
+        this.updateBlame(event.textEditor);
+      })
+    );
+
+    // 监听文档变化（清除缓存）
+    this.disposables.push(
+      vscode.workspace.onDidChangeTextDocument(event => {
+        const filePath = event.document.uri.fsPath;
+        this.gitService.clearCache(filePath);
+        this.blameCache.delete(filePath);
+      })
+    );
+
+    // 监听文档保存（更新 blame）
+    this.disposables.push(
+      vscode.workspace.onDidSaveTextDocument(document => {
+        const editor = vscode.window.visibleTextEditors.find(
+          e => e.document.uri.fsPath === document.uri.fsPath
+        );
+        if (editor) {
+          this.gitService.clearCache(document.uri.fsPath);
+          this.blameCache.delete(document.uri.fsPath);
+          this.updateBlame(editor);
+        }
+      })
+    );
+
+    // 读取配置
+    const config = vscode.workspace.getConfiguration('gitBlameInline');
+    this.enabled = config.get('enabled', true);
+
+    // 监听配置变化
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('gitBlameInline.enabled')) {
+          const config = vscode.workspace.getConfiguration('gitBlameInline');
+          this.enabled = config.get('enabled', true);
+          
+          // 更新当前编辑器
+          const editor = vscode.window.activeTextEditor;
+          if (editor) {
+            if (this.enabled) {
+              this.updateBlame(editor);
+            } else {
+              this.decorationProvider.clearDecorations(editor);
+            }
+          }
+        }
+      })
+    );
+
+    // 初始化当前编辑器
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+      this.updateBlame(activeEditor);
+    }
+  }
+
+  /**
+   * 更新编辑器的 blame 信息
+   */
+  private async updateBlame(editor: vscode.TextEditor): Promise<void> {
+    if (!this.enabled) {
+      return;
+    }
+
+    const document = editor.document;
+    
+    // 只处理文件 scheme
+    if (document.uri.scheme !== 'file') {
+      return;
+    }
+
+    // 检查是否在 Git 仓库中
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    if (!workspaceFolder) {
+      return;
+    }
+
+    try {
+      const blameMap = await this.gitService.getBlameForFile(document);
+      
+      if (blameMap) {
+        this.blameCache.set(document.uri.fsPath, blameMap);
+        this.decorationProvider.updateDecorations(editor, blameMap);
+      } else {
+        this.decorationProvider.clearDecorations(editor);
+      }
+    } catch (error) {
+      console.error('Failed to update blame:', error);
+    }
+  }
+
+  /**
+   * 切换 blame 显示
+   */
+  toggle(): void {
+    this.enabled = !this.enabled;
+    
+    // 更新配置
+    const config = vscode.workspace.getConfiguration('gitBlameInline');
+    config.update('enabled', this.enabled, vscode.ConfigurationTarget.Global);
+
+    // 更新所有可见编辑器
+    if (this.enabled) {
+      vscode.window.visibleTextEditors.forEach(editor => {
+        this.updateBlame(editor);
+      });
+    } else {
+      vscode.window.visibleTextEditors.forEach(editor => {
+        this.decorationProvider.clearDecorations(editor);
+      });
+    }
+
+    vscode.window.showInformationMessage(
+      `Git Blame Inline ${this.enabled ? '已启用' : '已禁用'}`
+    );
+  }
+
+  /**
+   * 释放资源
+   */
+  dispose(): void {
+    this.disposables.forEach(d => d.dispose());
+    this.decorationProvider.dispose();
+    this.gitService.clearAllCache();
+  }
+}

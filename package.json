@@ -1,0 +1,59 @@
+{
+    "name": "git-blame-inline",
+    "displayName": "Git Blame Inline",
+    "description": "在代码行尾显示 Git Blame 信息，悬停查看提交详情",
+    "version": "0.0.1",
+    "publisher": "your-publisher-name",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "SCM Providers",
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "git-blame-inline.toggle",
+                "title": "Git Blame Inline: Toggle Inline Blame"
+            }
+        ],
+        "configuration": {
+            "title": "Git Blame Inline",
+            "properties": {
+                "gitBlameInline.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "启用/禁用行内 blame 信息显示"
+                },
+                "gitBlameInline.format": {
+                    "type": "string",
+                    "default": "{author}, {time} • {message}",
+                    "description": "Blame 信息显示格式。可用变量：{author}, {time}, {message}, {hash}"
+                },
+                "gitBlameInline.messageLength": {
+                    "type": "number",
+                    "default": 50,
+                    "description": "提交信息最大显示长度"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "dev": "bun build src/extension.ts --outdir dist --watch --external vscode --sourcemap=external",
+        "build": "bun build src/extension.ts --outdir dist --minify --external vscode",
+        "package": "bun run build && vsce package",
+        "vscode:prepublish": "bun run build"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.80.0",
+        "@vscode/vsce": "^2.22.0",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {}
+}
