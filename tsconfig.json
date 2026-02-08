@@ -22,6 +22,7 @@
     "exclude": [
         "node_modules",
         "dist",
-        "gitlens-reference"
+        "gitlens-reference",
+        "vscode-git-graph"
     ]
 }

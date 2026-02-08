@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BlameInfo, RemoteInfo } from './types';
 import { formatDate } from './utils';
+import { BlameController } from './blameController';
 
 /**
  * 悬停提示提供器：显示完整的 commit 信息
@@ -70,9 +71,11 @@ export class BlameHoverProvider implements vscode.HoverProvider {
       md.appendMarkdown(`[在 ${remoteInfo.host} 上查看](${commitUrl}) | `);
     }
     
-    // 添加查看差异命令链接（使用正确的参数格式）
-    const diffCommand = `command:git-blame-inline.showCommitDiff?${encodeURIComponent(JSON.stringify([blame.hash]))}`;
-    md.appendMarkdown(`[查看更改](${diffCommand})`);
+    // 保存当前 commit hash 到全局变量，供命令使用
+    BlameController.currentCommitHash = blame.hash;
+    
+    // 添加查看差异命令链接（不传参数，命令内部从全局变量读取）
+    md.appendMarkdown(`[查看更改](command:git-blame-inline.showCommitDiff)`);
     
     md.appendMarkdown(`\n\n</div>`);
 

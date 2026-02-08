@@ -15,6 +15,9 @@ export class BlameController {
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
   private updateTimeout: NodeJS.Timeout | undefined;
+  
+  // 存储当前光标位置的 commit hash，供命令使用
+  static currentCommitHash: string | undefined;
 
   constructor(context: vscode.ExtensionContext) {
     this.gitService = new GitService();

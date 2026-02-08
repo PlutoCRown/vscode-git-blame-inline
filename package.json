@@ -3,7 +3,7 @@
     "displayName": "Git Blame Inline",
     "description": "在代码行尾显示 Git Blame 信息，悬停查看提交详情",
     "version": "0.0.1",
-    "publisher": "your-publisher-name",
+    "publisher": "PlutoCRown",
     "engines": {
         "vscode": "^1.80.0"
     },
