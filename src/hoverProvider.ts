@@ -39,10 +39,12 @@ export class BlameHoverProvider implements vscode.HoverProvider {
     const formattedDate = formatDate(blame.timestamp);
     const shortHash = blame.hash.substring(0, 8);
 
-    // 创建格式化的 commit 信息
+    // 创建格式化的 commit 信息（使用 HTML 限制宽度）
+    md.appendMarkdown(`<div style="max-width: 600px; word-wrap: break-word;">\n\n`);
     md.appendMarkdown(`### Git Blame\n\n`);
 
     md.appendMarkdown(`**Commit:** \`${shortHash}\`\n\n`);
+    
     // 作者信息（GitHub/GitLab 用户链接）
     if (remoteInfo) {
       const authorUrl = this.getAuthorUrl(remoteInfo, blame.authorEmail);
@@ -57,20 +59,22 @@ export class BlameHoverProvider implements vscode.HoverProvider {
 
     md.appendMarkdown(`**邮箱:** ${blame.authorEmail}\n\n`);
     md.appendMarkdown(`**时间:** ${formattedDate}\n\n`);
-        // Commit 链接（如果有远程仓库信息）
-        if (remoteInfo) {
-          const commitUrl = this.getCommitUrl(remoteInfo, blame.hash);
-    md.appendMarkdown(`**提交信息:** [${blame.summary}](${commitUrl})\n\n`);
-        } else {
-          md.appendMarkdown(`**提交信息:** ${blame.summary}\n\n`);
-        }
+    
+    md.appendMarkdown(`**提交信息:** ${blame.summary}\n\n`);
 
-    // // 添加快捷链接
-    // if (remoteInfo) {
-    //   md.appendMarkdown(`---\n\n`);
-    //   const commitUrl = this.getCommitUrl(remoteInfo, blame.hash);
-    //   md.appendMarkdown(`[查看完整提交](${commitUrl})\n\n`);
-    // }
+    // 添加操作链接
+    md.appendMarkdown(`---\n\n`);
+    
+    if (remoteInfo) {
+      const commitUrl = this.getCommitUrl(remoteInfo, blame.hash);
+      md.appendMarkdown(`[在 ${remoteInfo.host} 上查看](${commitUrl}) | `);
+    }
+    
+    // 添加查看差异命令链接（使用正确的参数格式）
+    const diffCommand = `command:git-blame-inline.showCommitDiff?${encodeURIComponent(JSON.stringify([blame.hash]))}`;
+    md.appendMarkdown(`[查看更改](${diffCommand})`);
+    
+    md.appendMarkdown(`\n\n</div>`);
 
     return md;
   }

@@ -20,8 +20,26 @@
             {
                 "command": "git-blame-inline.toggle",
                 "title": "Git Blame Inline: Toggle Inline Blame"
+            },
+            {
+                "command": "git-blame-inline.showCommitDiff",
+                "title": "Git Blame Inline: Show Commit Diff"
+            },
+            {
+                "command": "git-blame-inline.stashAllChanges",
+                "title": "Stash All Changes (Include Untracked)",
+                "icon": "$(archive)"
             }
         ],
+        "menus": {
+            "scm/title": [
+                {
+                    "command": "git-blame-inline.stashAllChanges",
+                    "group": "navigation",
+                    "when": "scmProvider == git"
+                }
+            ]
+        },
         "configuration": {
             "title": "Git Blame Inline",
             "properties": {

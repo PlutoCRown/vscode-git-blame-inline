@@ -48,7 +48,7 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 /**
- * 格式化日期
+ * 格式化日期（带时区）
  */
 export function formatDate(timestamp: number): string {
   const date = new Date(timestamp * 1000);
@@ -58,6 +58,7 @@ export function formatDate(timestamp: number): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
+    timeZoneName: 'short'
   });
 }

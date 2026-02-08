@@ -159,31 +159,54 @@ export class GitService {
   /**
    * 解析远程仓库 URL 为 Web URL
    */
-  parseRemoteUrl(remoteUrl: string): { baseUrl: string; owner: string; repo: string } | null {
+  parseRemoteUrl(remoteUrl: string): { baseUrl: string; owner: string; repo: string; host: 'GitHub' | 'GitLab' | 'Gitea' | 'Bitbucket' | 'Azure DevOps' | 'Unknown' } | null {
     // 支持 HTTPS 和 SSH 格式
     // HTTPS: https://github.com/owner/repo.git
     // SSH: git@github.com:owner/repo.git
     
     const httpsMatch = remoteUrl.match(/https?:\/\/([^\/]+)\/([^\/]+)\/([^\/\.]+)(\.git)?/);
     if (httpsMatch) {
-      const [, host, owner, repo] = httpsMatch;
+      const [, hostName, owner, repo] = httpsMatch;
       return {
-        baseUrl: `https://${host}`,
+        baseUrl: `https://${hostName}`,
         owner,
-        repo
+        repo,
+        host: this.detectHostType(hostName)
       };
     }
 
     const sshMatch = remoteUrl.match(/git@([^:]+):([^\/]+)\/([^\/\.]+)(\.git)?/);
     if (sshMatch) {
-      const [, host, owner, repo] = sshMatch;
+      const [, hostName, owner, repo] = sshMatch;
       return {
-        baseUrl: `https://${host}`,
+        baseUrl: `https://${hostName}`,
         owner,
-        repo
+        repo,
+        host: this.detectHostType(hostName)
       };
     }
 
     return null;
+  }
+
+  /**
+   * 检测 Git 主机类型
+   */
+  private detectHostType(hostname: string): 'GitHub' | 'GitLab' | 'Gitea' | 'Bitbucket' | 'Azure DevOps' | 'Unknown' {
+    const lowerHost = hostname.toLowerCase();
+    
+    if (lowerHost.includes('github')) {
+      return 'GitHub';
+    } else if (lowerHost.includes('gitlab')) {
+      return 'GitLab';
+    } else if (lowerHost.includes('gitea')) {
+      return 'Gitea';
+    } else if (lowerHost.includes('bitbucket')) {
+      return 'Bitbucket';
+    } else if (lowerHost.includes('dev.azure') || lowerHost.includes('visualstudio.com')) {
+      return 'Azure DevOps';
+    } else {
+      return 'Unknown';
+    }
   }
 }
