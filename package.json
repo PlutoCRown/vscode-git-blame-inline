@@ -2,14 +2,45 @@
     "name": "git-blame-inline",
     "displayName": "%displayName%",
     "description": "%description%",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "publisher": "PlutoCRown",
+    "author": "PlutoCRown",
+    "license": "MIT",
+    "icon": "icon.png",
     "engines": {
         "vscode": "^1.80.0"
     },
     "categories": [
         "SCM Providers",
         "Other"
+    ],
+    "keywords": [
+        "git",
+        "blame",
+        "inline",
+        "annotation",
+        "history",
+        "scm",
+        "github",
+        "gitlab",
+        "commit",
+        "author",
+        "vcs"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/PlutoCRown/vscode-git-blame-inline"
+    },
+    "homepage": "https://github.com/PlutoCRown/vscode-git-blame-inline#readme",
+    "bugs": {
+        "url": "https://github.com/PlutoCRown/vscode-git-blame-inline/issues"
+    },
+    "galleryBanner": {
+        "color": "#0066CC",
+        "theme": "dark"
+    },
+    "extensionDependencies": [
+        "vscode.git"
     ],
     "activationEvents": [
         "onStartupFinished"
@@ -75,7 +106,7 @@
     "devDependencies": {
         "@types/node": "^20.0.0",
         "@types/vscode": "^1.80.0",
-        "@vscode/vsce": "^2.22.0",
+        "@vscode/vsce": "^3.7.1",
         "typescript": "^5.3.0"
     },
     "dependencies": {}

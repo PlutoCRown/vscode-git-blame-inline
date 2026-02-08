@@ -1,6 +1,45 @@
+# VS Code Extension - Files to ignore when packaging
+
+# Development files
 .vscode/**
 .vscode-test/**
 src/**
-.gitignore
+*.ts
+*.map
 tsconfig.json
-*.vsix
+bun.lock
+
+# Documentation (keep only essential)
+TODO.md
+CONFIGURATION_CHECKLIST.md
+RELEASE_CHECKLIST.md
+docs/ICON*.md
+
+# Design files
+icon.svg
+
+# Reference materials
+gitlens-reference/**
+vscode-git-graph/**
+
+# Node modules (installed dependencies will be bundled in dist)
+node_modules/**
+
+# Git files
+.gitignore
+.git/**
+
+# IDE files
+.idea/**
+*.code-workspace
+
+# Test files
+test/**
+tests/**
+
+# Build scripts
+scripts/**
+
+# Misc
+*.log
+.DS_Store
