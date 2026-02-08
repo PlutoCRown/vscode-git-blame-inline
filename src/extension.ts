@@ -197,7 +197,7 @@ async function stashChanges(resourceGroup: any): Promise<void> {
         '-m',
         message || 'Stashed staged changes'
       ], { cwd });
-      vscode.window.showInformationMessage('✅ 暂存的更改已 stash');
+      console.log('✅ 暂存的更改已 stash');
     } else {
       // Stash 未暂存的更改（包括未跟踪的文件）
       await execFileAsync('git', [
@@ -208,7 +208,7 @@ async function stashChanges(resourceGroup: any): Promise<void> {
         '-m',
         message || 'Stashed unstaged changes'
       ], { cwd });
-      vscode.window.showInformationMessage('✅ 更改已 stash（保留已暂存的更改）');
+      console.log('✅ 更改已 stash（保留已暂存的更改）');
     }
 
   } catch (error: any) {

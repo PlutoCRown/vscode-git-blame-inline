@@ -58,9 +58,7 @@ export class BlameController {
         if (this.updateTimeout) {
           clearTimeout(this.updateTimeout);
         }
-        // 立即清除装饰，然后延迟更新（防止输入时闪烁）
-        this.clearDecorationsOnly(event.textEditor);
-        // 使用短暂延迟让输入完成
+        // 使用防抖延迟更新，不立即清除装饰以避免闪烁
         this.updateTimeout = setTimeout(() => {
           this.updateBlame(event.textEditor);
         }, 50);
@@ -192,13 +190,6 @@ export class BlameController {
     vscode.window.showInformationMessage(
       `Git Blame Inline ${this.enabled ? '已启用' : '已禁用'}`
     );
-  }
-
-  /**
-   * 仅清除装饰（不清除缓存）
-   */
-  private clearDecorationsOnly(editor: vscode.TextEditor): void {
-    this.decorationProvider.clearDecorations(editor);
   }
 
   /**

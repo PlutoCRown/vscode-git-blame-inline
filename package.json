@@ -35,7 +35,7 @@
             "scm/resourceGroup/context": [
                 {
                     "command": "git-blame-inline.stashChanges",
-                    "when": "scmProvider == git",
+                    "when": "scmProvider == git && config.gitBlameInline.showStashButton",
                     "group": "inline"
                 }
             ]
@@ -57,6 +57,11 @@
                     "type": "number",
                     "default": 50,
                     "description": "提交信息最大显示长度"
+                },
+                "gitBlameInline.showStashButton": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "在源代码管理资源组中显示 Stash 按钮"
                 }
             }
         }
