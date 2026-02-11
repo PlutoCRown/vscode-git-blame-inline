@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { GitService } from './gitService';
 import { DecorationProvider } from './decorationProvider';
 import { BlameHoverProvider } from './hoverProvider';
 import { BlameInfo, RemoteInfo } from './types';
 import { t } from './i18n';
+import { decodeDiffDocUri, DiffDocProvider } from './diffDocProvider';
 
 /**
  * Blame 控制器：协调各组件工作
@@ -27,27 +29,42 @@ export class BlameController {
     // 注册 hover provider
     const hoverProvider = new BlameHoverProvider(
       (document, line) => {
-        const blameMap = this.blameCache.get(document.uri.fsPath);
+        const key = this.getCacheKey(document);
+        if (!key) {
+          return undefined;
+        }
+        const blameMap = this.blameCache.get(key);
         return blameMap?.get(line);
       },
       (document) => {
-        const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-        if (!workspaceFolder) {
+        const repoPath = this.getRepoPath(document);
+        if (!repoPath) {
           return null;
         }
-        return this.remoteCache.get(workspaceFolder.uri.fsPath) || null;
+        return this.remoteCache.get(repoPath) || null;
       }
     );
     
     this.disposables.push(
-      vscode.languages.registerHoverProvider({ scheme: 'file' }, hoverProvider)
+      vscode.languages.registerHoverProvider(
+        [{ scheme: 'file' }, { scheme: DiffDocProvider.scheme }, { scheme: 'git' }],
+        hoverProvider
+      )
     );
 
     // 监听编辑器切换
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor(editor => {
         if (editor) {
-          this.updateBlame(editor);
+          const hasGitDiff = vscode.window.visibleTextEditors.some(
+            e => e.document.uri.scheme === 'git'
+          );
+          if (editor.document.uri.scheme === DiffDocProvider.scheme || hasGitDiff) {
+            vscode.window.visibleTextEditors
+              .forEach(e => this.updateBlame(e));
+          } else {
+            this.updateBlame(editor);
+          }
         }
       })
     );
@@ -61,7 +78,15 @@ export class BlameController {
         }
         // 使用防抖延迟更新，不立即清除装饰以避免闪烁
         this.updateTimeout = setTimeout(() => {
-          this.updateBlame(event.textEditor);
+          const hasGitDiff = vscode.window.visibleTextEditors.some(
+            e => e.document.uri.scheme === 'git'
+          );
+          const isDiff = event.textEditor.document.uri.scheme === DiffDocProvider.scheme;
+          if (isDiff || hasGitDiff) {
+            vscode.window.visibleTextEditors.forEach(editor => this.updateBlame(editor));
+          } else {
+            this.updateBlame(event.textEditor);
+          }
         }, 50);
       })
     );
@@ -130,34 +155,33 @@ export class BlameController {
 
     const document = editor.document;
     
-    // 只处理文件 scheme
-    if (document.uri.scheme !== 'file') {
-      return;
-    }
-
-    // 检查是否在 Git 仓库中
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-    if (!workspaceFolder) {
+    const info = this.getDocumentInfo(document);
+    if (!info) {
       return;
     }
 
     try {
       // 获取 blame 信息
-      const blameMap = await this.gitService.getBlameForFile(document);
+      const blameMap = await this.gitService.getBlameForRepoFile(
+        info.repoPath,
+        info.filePath,
+        info.commit,
+        info.cacheKey
+      );
       
       // 获取远程仓库信息（如果还没有缓存）
-      if (!this.remoteCache.has(workspaceFolder.uri.fsPath)) {
-        const remoteUrl = await this.gitService.getRemoteUrl(workspaceFolder);
+      if (!this.remoteCache.has(info.repoPath)) {
+        const remoteUrl = await this.gitService.getRemoteUrlForRepo(info.repoPath);
         if (remoteUrl) {
           const remoteInfo = this.gitService.parseRemoteUrl(remoteUrl);
-          this.remoteCache.set(workspaceFolder.uri.fsPath, remoteInfo);
+          this.remoteCache.set(info.repoPath, remoteInfo);
         } else {
-          this.remoteCache.set(workspaceFolder.uri.fsPath, null);
+          this.remoteCache.set(info.repoPath, null);
         }
       }
       
       if (blameMap) {
-        this.blameCache.set(document.uri.fsPath, blameMap);
+        this.blameCache.set(info.cacheKey, blameMap);
         this.decorationProvider.updateDecorations(editor, blameMap);
       } else {
         this.decorationProvider.clearDecorations(editor);
@@ -165,6 +189,75 @@ export class BlameController {
     } catch (error) {
       console.error('Failed to update blame:', error);
     }
+  }
+
+  private getDocumentInfo(document: vscode.TextDocument): {
+    cacheKey: string;
+    repoPath: string;
+    filePath: string;
+    commit?: string;
+  } | null {
+    if (document.uri.scheme === 'file') {
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+      if (!workspaceFolder) {
+        return null;
+      }
+      const repoPath = workspaceFolder.uri.fsPath;
+      const filePath = path.relative(repoPath, document.uri.fsPath);
+      return {
+        cacheKey: document.uri.fsPath,
+        repoPath,
+        filePath
+      };
+    }
+
+    if (document.uri.scheme === DiffDocProvider.scheme) {
+      const data = decodeDiffDocUri(document.uri);
+      if (!data.exists) {
+        return null;
+      }
+      return {
+        cacheKey: `${data.repo}::${data.filePath}::${data.commit}`,
+        repoPath: data.repo,
+        filePath: data.filePath,
+        commit: data.commit
+      };
+    }
+
+    if (document.uri.scheme === 'git') {
+      let queryPath: string | undefined;
+      let queryRef: string | undefined;
+      try {
+        const data = JSON.parse(document.uri.query) as { path?: string; ref?: string };
+        queryPath = data.path;
+        queryRef = data.ref;
+      } catch {}
+
+      const fsPath = queryPath ?? document.uri.fsPath;
+      const fileUri = vscode.Uri.file(fsPath);
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileUri);
+      if (!workspaceFolder) {
+        return null;
+      }
+      const repoPath = workspaceFolder.uri.fsPath;
+      const filePath = path.relative(repoPath, fsPath);
+      return {
+        cacheKey: `${repoPath}::${filePath}::${queryRef ?? 'git'}`,
+        repoPath,
+        filePath,
+        commit: queryRef
+      };
+    }
+
+    return null;
+  }
+
+  private getCacheKey(document: vscode.TextDocument): string | null {
+    return this.getDocumentInfo(document)?.cacheKey ?? null;
+  }
+
+  private getRepoPath(document: vscode.TextDocument): string | null {
+    return this.getDocumentInfo(document)?.repoPath ?? null;
   }
 
   /**

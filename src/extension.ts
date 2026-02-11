@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BlameController } from './blameController';
-import { DiffDocProvider, encodeDiffDocUri } from './diffDocProvider';
+import { DiffDocProvider, decodeDiffDocUri, encodeDiffDocUri } from './diffDocProvider';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
@@ -79,15 +79,47 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       return;
     }
 
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
-    if (!workspaceFolder) {
-      vscode.window.showErrorMessage(t.error.notInWorkspace);
-      return;
-    }
+    let cwd: string;
+    let relativeFilePath: string;
+    let fileName: string;
 
-    const cwd = workspaceFolder.uri.fsPath;
-    const filePath = editor.document.uri.fsPath;
-    const relativeFilePath = path.relative(cwd, filePath);
+    if (editor.document.uri.scheme === DiffDocProvider.scheme) {
+      const data = decodeDiffDocUri(editor.document.uri);
+      if (!data.exists) {
+        vscode.window.showErrorMessage(t.error.notInWorkspace);
+        return;
+      }
+      cwd = data.repo;
+      relativeFilePath = data.filePath;
+      fileName = path.basename(relativeFilePath);
+    } else if (editor.document.uri.scheme === 'git') {
+      let queryPath: string | undefined;
+      try {
+        const data = JSON.parse(editor.document.uri.query) as { path?: string };
+        queryPath = data.path;
+      } catch {}
+
+      const fsPath = queryPath ?? editor.document.uri.fsPath;
+      const fileUri = vscode.Uri.file(fsPath);
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileUri);
+      if (!workspaceFolder) {
+        vscode.window.showErrorMessage(t.error.notInWorkspace);
+        return;
+      }
+      cwd = workspaceFolder.uri.fsPath;
+      relativeFilePath = path.relative(cwd, fsPath);
+      fileName = path.basename(fsPath);
+    } else {
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+      if (!workspaceFolder) {
+        vscode.window.showErrorMessage(t.error.notInWorkspace);
+        return;
+      }
+      cwd = workspaceFolder.uri.fsPath;
+      const filePath = editor.document.uri.fsPath;
+      relativeFilePath = path.relative(cwd, filePath);
+      fileName = path.basename(filePath);
+    }
 
     // 获取父 commit hash
     let parentHash: string;
@@ -99,7 +131,6 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       parentHash = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // Git empty tree hash
     }
 
-    const fileName = path.basename(filePath);
     const shortHash = commitHash.substring(0, 8);
     const shortParentHash = parentHash.substring(0, 8);
 

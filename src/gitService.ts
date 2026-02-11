@@ -60,6 +60,46 @@ export class GitService {
   }
 
   /**
+   * 获取指定仓库/文件/提交的 blame 信息
+   */
+  async getBlameForRepoFile(
+    repoPath: string,
+    filePath: string,
+    commit?: string,
+    cacheKey?: string
+  ): Promise<Map<number, BlameInfo> | null> {
+    const key = cacheKey ?? `${repoPath}::${filePath}::${commit ?? 'working-tree'}`;
+
+    const cached = this.getCachedBlame(key);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const args = ['blame', '--line-porcelain'];
+      if (commit) {
+        args.push(commit);
+      }
+      args.push('--', filePath);
+
+      const { stdout } = await execFileAsync('git', args, {
+        cwd: repoPath,
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+      });
+
+      const blameMap = this.parseBlameOutput(stdout);
+
+      this.cache.set(key, blameMap);
+      this.cacheTimestamps.set(key, Date.now());
+
+      return blameMap;
+    } catch (error) {
+      console.error('Git blame failed:', error);
+      return null;
+    }
+  }
+
+  /**
    * 解析 git blame --line-porcelain 输出
    */
   private parseBlameOutput(output: string): Map<number, BlameInfo> {
@@ -141,15 +181,22 @@ export class GitService {
    * 获取远程仓库 URL
    */
   async getRemoteUrl(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
+    return this.getRemoteUrlForRepo(workspaceFolder.uri.fsPath);
+  }
+
+  /**
+   * 获取指定仓库的远程 URL
+   */
+  async getRemoteUrlForRepo(repoPath: string): Promise<string | null> {
     try {
       const { stdout } = await execFileAsync('git', [
         'config',
         '--get',
         'remote.origin.url'
       ], {
-        cwd: workspaceFolder.uri.fsPath
+        cwd: repoPath
       });
-      
+
       return stdout.trim();
     } catch (error) {
       return null;
