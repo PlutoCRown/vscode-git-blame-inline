@@ -6,6 +6,7 @@ import { formatRelativeTime, truncateText } from './utils';
  * 装饰提供器：在行尾显示 blame 信息
  */
 export class DecorationProvider {
+  private static readonly maxSmallIntegerV8 = 2 ** 30 - 1;
   private decorationType: vscode.TextEditorDecorationType;
 
   constructor() {
@@ -57,7 +58,12 @@ export class DecorationProvider {
     const text = `${blameInfo.author}, ${relativeTime} • ${shortSummary}`;
 
     return {
-      range: line.range,
+      range: new vscode.Range(
+        line.lineNumber,
+        DecorationProvider.maxSmallIntegerV8,
+        line.lineNumber,
+        DecorationProvider.maxSmallIntegerV8
+      ),
       renderOptions: {
         after: {
           contentText: text

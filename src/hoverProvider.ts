@@ -4,6 +4,8 @@ import { formatDate } from './utils';
 import { BlameController } from './blameController';
 import { t } from './i18n';
 
+const maxSmallIntegerV8 = 2 ** 30 - 1; // Max number that can be stored in V8's smis (small integers)
+
 /**
  * 悬停提示提供器：显示完整的 commit 信息
  */
@@ -18,6 +20,25 @@ export class BlameHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document !== document) {
+      return null;
+    }
+
+    // 仅在光标所在行显示 hover（与装饰显示行一致）
+    const isCursorLine = editor.selections.some((selection) => selection.active.line === position.line);
+    if (!isCursorLine) {
+      return null;
+    }
+
+    // 仅当悬停在行尾装饰位置时显示
+    const range = document.validateRange(
+      new vscode.Range(position.line, maxSmallIntegerV8, position.line, maxSmallIntegerV8)
+    );
+    if (range.start.character !== position.character) {
+      return null;
+    }
+
     const lineNumber = position.line + 1; // blame 行号从 1 开始
     const blameInfo = this.getBlameInfo(document, lineNumber);
 
