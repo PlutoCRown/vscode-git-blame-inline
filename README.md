@@ -12,19 +12,6 @@
 
 A lightweight VSCode extension that displays Git Blame information inline at the end of each code line, with rich hover details.
 
-## ✨ Features
-
-- 🎯 **Inline Git Blame** - Display author, time, and commit message at the end of each line
-- 🔍 **Rich Hover Details** - View complete commit information with clickable links
-- 🔗 **GitHub/GitLab Integration** - Quick access to commits and author profiles on remote repositories
-- 📝 **View Commit Changes** - Open full commit diff with one click
-- 💾 **Smart Stash** - Separate stash controls for staged and unstaged changes
-- 🎨 **Theme Adaptive** - Automatically adapts to your editor theme (dark/light)
-- ⚡ **High Performance** - Intelligent caching, only processes visible areas
-- 🌐 **Multi-language** - Supports English and Simplified Chinese
-- ⚙️ **Customizable Format** - Configure how blame information is displayed
-- 📝 **Multi-line Commit Messages** - Full support for displaying multi-line commit messages
-
 ## 📸 Screenshots
 
 ### Inline Blame Display
@@ -48,57 +35,6 @@ Easily stash staged or unstaged changes with custom messages from the Source Con
 - View file changes in that commit
 - Direct links to author profiles
 
-## 🚀 Quick Start
-
-1. Install the extension from VS Code Marketplace
-2. Open a file in a Git repository
-3. Git blame information will automatically appear at the end of each line
-4. Hover over any line to see detailed commit information
-
-## 📋 Commands
-
-- **Git Blame Lite: Toggle Inline Blame** - Toggle the display of inline blame annotations
-- **Git Blame Lite: Show Commit Diff** - View the changes made in a specific commit
-- **Stash Changes...** - Stash your staged or unstaged changes with a custom message
-
-## ⚙️ Configuration
-
-Configure the extension in your VS Code settings:
-
-| Setting                          | Type    | Default                          | Description                         |
-| -------------------------------- | ------- | -------------------------------- | ----------------------------------- |
-| `gitBlameInline.enabled`         | boolean | `true`                           | Enable/disable inline blame display |
-| `gitBlameInline.format`          | string  | `"{author}, {time} • {message}"` | Customize the inline blame format   |
-| `gitBlameInline.messageLength`   | number  | `50`                             | Maximum length for commit messages  |
-| `gitBlameInline.showStashButton` | boolean | `true`                           | Show stash button in source control |
-
-### Format Variables
-
-You can use the following variables in `gitBlameInline.format`:
-- `{author}` - Commit author name
-- `{time}` - Relative time (e.g., "2 days ago")
-- `{message}` - Commit message
-- `{hash}` - Short commit hash
-
-**Example formats:**
-- `"{author}, {time} • {message}"` (default)
-- `"{author} ({time}): {message}"`
-- `"{hash} - {author}: {message}"`
-
-## 🔧 Usage Tips
-
-### Stash Feature
-Right-click on "Changes" or "Staged Changes" in the Source Control panel to find the stash button. You can:
-- Stash only staged changes while keeping working tree changes
-- Stash only unstaged changes while keeping staged changes
-- Add custom messages to identify your stashes
-
-### Keyboard Shortcuts
-You can set custom keyboard shortcuts for commands:
-1. Open Keyboard Shortcuts (`Cmd+K Cmd+S` / `Ctrl+K Ctrl+S`)
-2. Search for "Git Blame Lite"
-3. Assign your preferred shortcuts
-
 ## ❓ FAQ
 
 ### Why not use GitLens?
@@ -118,8 +54,6 @@ There are other blame extensions available, but Git Blame Lite offers a better e
 
 - **GitBlame** - The information display is inconvenient and not intuitive, making it harder to quickly see blame information while coding
 - **GitBlameInline** - Limited to showing only a single line of information, which doesn't provide enough context compared to GitLens or Git Blame Lite
-- **Git Blame Lite** - Combines the best of both worlds: convenient inline display with rich hover details, multi-line commit message support, and comprehensive features like viewing diffs and GitHub/GitLab integration
-
 Git Blame Lite is designed to be both lightweight and feature-rich, offering a much better user experience than basic blame extensions.
 
 ## 🤝 Contributing
