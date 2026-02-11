@@ -48,7 +48,7 @@ export class BlameHoverProvider implements vscode.HoverProvider {
 
     const remoteInfo = this.getRemoteInfo(document);
     const markdown = this.createMarkdown(blameInfo, remoteInfo);
-    return new vscode.Hover(markdown);
+    return new vscode.Hover(markdown, range);
   }
 
   /**
