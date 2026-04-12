@@ -12,7 +12,8 @@ interface I18nStrings {
     email: string;
     time: string;
     message: string;
-    viewOn: string;
+    /** 在远程站点打开 commit 的链接文案，参数为站点名（如 GitHub） */
+    viewOnHost: (host: string) => string;
     viewChanges: string;
   };
   // 相对时间
@@ -64,7 +65,7 @@ const en: I18nStrings = {
     email: 'Email',
     time: 'Time',
     message: 'Message',
-    viewOn: 'View on',
+    viewOnHost: (host: string) => `View on ${host}`,
     viewChanges: 'View Changes',
   },
   time: {
@@ -112,7 +113,7 @@ const zhCN: I18nStrings = {
     email: '邮箱',
     time: '时间',
     message: '提交信息',
-    viewOn: '在',
+    viewOnHost: (host: string) => `在 ${host} 中查看`,
     viewChanges: '查看更改',
   },
   time: {

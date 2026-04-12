@@ -90,7 +90,7 @@ export class BlameHoverProvider implements vscode.HoverProvider {
     
     if (remoteInfo) {
       const commitUrl = this.getCommitUrl(remoteInfo, blame.hash);
-      md.appendMarkdown(`[${t.hover.viewOn} ${remoteInfo.host}](${commitUrl}) | `);
+      md.appendMarkdown(`[${t.hover.viewOnHost(remoteInfo.host)}](${commitUrl}) | `);
     }
     
     // 保存当前 commit hash 到全局变量，供命令使用

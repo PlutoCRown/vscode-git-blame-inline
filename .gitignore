@@ -36,4 +36,6 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
+# Reference
 gitlens-reference/
+vscode-git-graph/

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 - 2026-04-12
+- Resolve the correct Git repository per file across the workspace (multi-root folders and nested repositories).
+- Clearer, more consistent user-facing copy and messages.
+
 ## 1.1.0 - 2026-02-11
 - Support blame annotations in diff view (left/right panes show their own blame).
 - Improve blame hover trigger/positioning to be less intrusive and closer to the inline blame.
