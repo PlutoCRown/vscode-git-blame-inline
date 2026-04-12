@@ -5,8 +5,10 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import { t } from './i18n';
+import { GitService } from './gitService';
 
 const execFileAsync = promisify(execFile);
+const gitService = new GitService();
 
 let blameController: BlameController | undefined;
 let diffDocProvider: DiffDocProvider | undefined;
@@ -100,22 +102,21 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       } catch {}
 
       const fsPath = queryPath ?? editor.document.uri.fsPath;
-      const fileUri = vscode.Uri.file(fsPath);
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileUri);
-      if (!workspaceFolder) {
+      const repoPath = await gitService.getRepositoryRoot(fsPath);
+      if (!repoPath) {
         vscode.window.showErrorMessage(t.error.notInWorkspace);
         return;
       }
-      cwd = workspaceFolder.uri.fsPath;
+      cwd = repoPath;
       relativeFilePath = path.relative(cwd, fsPath);
       fileName = path.basename(fsPath);
     } else {
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
-      if (!workspaceFolder) {
+      const repoPath = await gitService.getRepositoryRoot(editor.document.uri.fsPath);
+      if (!repoPath) {
         vscode.window.showErrorMessage(t.error.notInWorkspace);
         return;
       }
-      cwd = workspaceFolder.uri.fsPath;
+      cwd = repoPath;
       const filePath = editor.document.uri.fsPath;
       relativeFilePath = path.relative(cwd, filePath);
       fileName = path.basename(filePath);
@@ -173,7 +174,15 @@ async function stashChanges(resourceGroup: any): Promise<void> {
     }
 
     // 获取当前仓库
-    const repo = git.repositories[0];
+    const activeFilePath = vscode.window.activeTextEditor?.document.uri.fsPath;
+    const matchedRepo = activeFilePath
+      ? git.repositories.find((repository: any) => {
+          const repoPath = repository.rootUri.fsPath;
+          return activeFilePath === repoPath || activeFilePath.startsWith(repoPath + path.sep);
+        })
+      : undefined;
+
+    const repo = matchedRepo ?? git.repositories[0];
     const cwd = repo.rootUri.fsPath;
 
     // 判断是哪个资源组

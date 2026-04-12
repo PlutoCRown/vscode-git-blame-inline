@@ -15,6 +15,13 @@ export class BlameController {
   private decorationProvider: DecorationProvider;
   private disposables: vscode.Disposable[] = [];
   private blameCache = new Map<string, Map<number, BlameInfo>>();
+  private documentInfoCache = new Map<string, {
+    cacheKey: string;
+    repoPath: string;
+    filePath: string;
+    commit?: string;
+  }>();
+  private documentCacheKeys = new Map<string, Set<string>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
   private updateTimeout: NodeJS.Timeout | undefined;
@@ -94,9 +101,7 @@ export class BlameController {
     // 监听文档变化（清除缓存）
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument(event => {
-        const filePath = event.document.uri.fsPath;
-        this.gitService.clearCache(filePath);
-        this.blameCache.delete(filePath);
+        this.clearDocumentCaches(event.document.uri);
       })
     );
 
@@ -107,8 +112,7 @@ export class BlameController {
           e => e.document.uri.fsPath === document.uri.fsPath
         );
         if (editor) {
-          this.gitService.clearCache(document.uri.fsPath);
-          this.blameCache.delete(document.uri.fsPath);
+          this.clearDocumentCaches(document.uri);
           this.updateBlame(editor);
         }
       })
@@ -155,10 +159,12 @@ export class BlameController {
 
     const document = editor.document;
     
-    const info = this.getDocumentInfo(document);
+    const info = await this.getDocumentInfo(document);
     if (!info) {
       return;
     }
+
+    this.documentInfoCache.set(document.uri.toString(), info);
 
     try {
       // 获取 blame 信息
@@ -181,6 +187,7 @@ export class BlameController {
       }
       
       if (blameMap) {
+        this.trackDocumentCacheKey(document.uri.fsPath, info.cacheKey);
         this.blameCache.set(info.cacheKey, blameMap);
         this.decorationProvider.updateDecorations(editor, blameMap);
       } else {
@@ -191,21 +198,21 @@ export class BlameController {
     }
   }
 
-  private getDocumentInfo(document: vscode.TextDocument): {
+  private async getDocumentInfo(document: vscode.TextDocument): Promise<{
     cacheKey: string;
     repoPath: string;
     filePath: string;
     commit?: string;
-  } | null {
+  } | null> {
     if (document.uri.scheme === 'file') {
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-      if (!workspaceFolder) {
+      const repoPath = await this.gitService.getRepositoryRoot(document.uri.fsPath);
+      if (!repoPath) {
         return null;
       }
-      const repoPath = workspaceFolder.uri.fsPath;
+
       const filePath = path.relative(repoPath, document.uri.fsPath);
       return {
-        cacheKey: document.uri.fsPath,
+        cacheKey: `${repoPath}::${filePath}::working-tree`,
         repoPath,
         filePath
       };
@@ -234,12 +241,11 @@ export class BlameController {
       } catch {}
 
       const fsPath = queryPath ?? document.uri.fsPath;
-      const fileUri = vscode.Uri.file(fsPath);
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileUri);
-      if (!workspaceFolder) {
+      const repoPath = await this.gitService.getRepositoryRoot(fsPath);
+      if (!repoPath) {
         return null;
       }
-      const repoPath = workspaceFolder.uri.fsPath;
+
       const filePath = path.relative(repoPath, fsPath);
       return {
         cacheKey: `${repoPath}::${filePath}::${queryRef ?? 'git'}`,
@@ -253,11 +259,34 @@ export class BlameController {
   }
 
   private getCacheKey(document: vscode.TextDocument): string | null {
-    return this.getDocumentInfo(document)?.cacheKey ?? null;
+    return this.documentInfoCache.get(document.uri.toString())?.cacheKey ?? null;
   }
 
   private getRepoPath(document: vscode.TextDocument): string | null {
-    return this.getDocumentInfo(document)?.repoPath ?? null;
+    return this.documentInfoCache.get(document.uri.toString())?.repoPath ?? null;
+  }
+
+  private trackDocumentCacheKey(documentPath: string, cacheKey: string): void {
+    const keys = this.documentCacheKeys.get(documentPath) ?? new Set<string>();
+    keys.add(cacheKey);
+    this.documentCacheKeys.set(documentPath, keys);
+  }
+
+  private clearDocumentCaches(documentUri: vscode.Uri): void {
+    const documentPath = documentUri.fsPath;
+    const cacheKeys = this.documentCacheKeys.get(documentPath);
+
+    if (cacheKeys) {
+      for (const cacheKey of cacheKeys) {
+        this.gitService.clearCache(cacheKey);
+        this.blameCache.delete(cacheKey);
+      }
+      this.documentCacheKeys.delete(documentPath);
+    }
+
+    this.documentInfoCache.delete(documentUri.toString());
+    this.gitService.clearCache(documentPath);
+    this.blameCache.delete(documentPath);
   }
 
   /**

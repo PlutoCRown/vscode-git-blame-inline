@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 export class GitService {
   private cache = new Map<string, Map<number, BlameInfo>>();
   private cacheTimestamps = new Map<string, number>();
+  private repoRootCache = new Map<string, string | null>();
   private readonly CACHE_TTL = 60000; // 缓存 60 秒
 
   /**
@@ -27,13 +28,12 @@ export class GitService {
     }
 
     try {
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-      if (!workspaceFolder) {
+      const repoPath = await this.getRepositoryRoot(filePath);
+      if (!repoPath) {
         return null;
       }
 
-      const cwd = workspaceFolder.uri.fsPath;
-      const relativePath = path.relative(cwd, filePath);
+      const relativePath = path.relative(repoPath, filePath);
 
       // 执行 git blame --line-porcelain
       const { stdout } = await execFileAsync('git', [
@@ -41,7 +41,7 @@ export class GitService {
         '--line-porcelain',
         relativePath
       ], {
-        cwd,
+        cwd: repoPath,
         maxBuffer: 10 * 1024 * 1024 // 10MB buffer
       });
 
@@ -167,6 +167,31 @@ export class GitService {
   clearCache(filePath: string): void {
     this.cache.delete(filePath);
     this.cacheTimestamps.delete(filePath);
+  }
+
+  /**
+   * 获取文件所属的 Git 仓库根目录
+   */
+  async getRepositoryRoot(filePath: string): Promise<string | null> {
+    const directory = path.dirname(filePath);
+
+    if (this.repoRootCache.has(directory)) {
+      return this.repoRootCache.get(directory) ?? null;
+    }
+
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
+        cwd: directory,
+        maxBuffer: 1024 * 1024
+      });
+
+      const repoPath = stdout.trim();
+      this.repoRootCache.set(directory, repoPath || null);
+      return repoPath || null;
+    } catch {
+      this.repoRootCache.set(directory, null);
+      return null;
+    }
   }
 
   /**
