@@ -6,7 +6,6 @@ import { formatRelativeTime, truncateText } from './utils';
  * 装饰提供器：在行尾显示 blame 信息
  */
 export class DecorationProvider {
-  private static readonly maxSmallIntegerV8 = 2 ** 30 - 1;
   private decorationType: vscode.TextEditorDecorationType;
 
   constructor() {
@@ -19,7 +18,7 @@ export class DecorationProvider {
         fontWeight: 'normal',
         textDecoration: 'none'
       },
-      rangeBehavior: vscode.DecorationRangeBehavior.OpenOpen // 使用 OpenOpen 防止闪烁
+      rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
     });
   }
 
@@ -60,9 +59,9 @@ export class DecorationProvider {
     return {
       range: new vscode.Range(
         line.lineNumber,
-        DecorationProvider.maxSmallIntegerV8,
+        line.range.end.character,
         line.lineNumber,
-        DecorationProvider.maxSmallIntegerV8
+        line.range.end.character
       ),
       renderOptions: {
         after: {

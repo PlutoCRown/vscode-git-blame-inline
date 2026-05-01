@@ -22,13 +22,16 @@ export class GitService {
     repoPath: string,
     filePath: string,
     commit?: string,
-    cacheKey?: string
+    cacheKey?: string,
+    contents?: string
   ): Promise<Map<number, BlameInfo> | null> {
     const key = cacheKey ?? `${repoPath}::${filePath}::${commit ?? 'working-tree'}`;
 
-    const cached = this.getCachedBlame(key);
-    if (cached) {
-      return cached;
+    if (contents === undefined) {
+      const cached = this.getCachedBlame(key);
+      if (cached) {
+        return cached;
+      }
     }
 
     try {
@@ -36,17 +39,19 @@ export class GitService {
       if (commit) {
         args.push(commit);
       }
+      if (contents !== undefined) {
+        args.push('--contents', '-');
+      }
       args.push('--', filePath);
 
-      const { stdout } = await execFileAsync('git', args, {
-        cwd: repoPath,
-        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-      });
+      const { stdout } = await this.execGit(args, repoPath, contents);
 
       const blameMap = this.parseBlameOutput(stdout);
 
-      this.cache.set(key, blameMap);
-      this.cacheTimestamps.set(key, Date.now());
+      if (contents === undefined) {
+        this.cache.set(key, blameMap);
+        this.cacheTimestamps.set(key, Date.now());
+      }
 
       return blameMap;
     } catch (error) {
@@ -87,7 +92,7 @@ export class GitService {
         currentSummary = line.substring(8);
       } else if (line.startsWith('\t')) {
         // 实际代码行，保存 blame 信息
-        if (currentHash && currentLineNumber > 0) {
+        if (currentHash && currentHash !== '0000000000000000000000000000000000000000' && currentLineNumber > 0) {
           blameMap.set(currentLineNumber, {
             hash: currentHash,
             author: currentAuthor,
@@ -101,6 +106,35 @@ export class GitService {
     }
 
     return blameMap;
+  }
+
+  private execGit(
+    args: string[],
+    cwd: string,
+    input?: string
+  ): Promise<{ stdout: string; stderr: string }> {
+    if (input === undefined) {
+      return execFileAsync('git', args, {
+        cwd,
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      const child = execFile('git', args, {
+        cwd,
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+      }, (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve({ stdout, stderr });
+      });
+
+      child.stdin?.end(input);
+    });
   }
 
   /**

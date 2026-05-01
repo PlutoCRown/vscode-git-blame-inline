@@ -26,7 +26,7 @@ export class BlameController {
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
   private updateTimeout: NodeJS.Timeout | undefined;
-  
+
   // 存储当前光标位置的 commit hash，供命令使用
   static currentCommitHash: string | undefined;
 
@@ -52,7 +52,7 @@ export class BlameController {
         return this.remoteCache.get(repoPath) || null;
       }
     );
-    
+
     this.disposables.push(
       vscode.languages.registerHoverProvider(
         [{ scheme: 'file' }, { scheme: DiffDocProvider.scheme }, { scheme: 'git' }],
@@ -104,6 +104,7 @@ export class BlameController {
       vscode.workspace.onDidChangeTextDocument(event => {
         this.clearDocumentCaches(event.document.uri);
         this.clearDocumentDecorations(event.document);
+        this.scheduleDocumentUpdate(event.document);
       })
     );
 
@@ -130,7 +131,7 @@ export class BlameController {
         if (event.affectsConfiguration('gitBlameInline.enabled')) {
           const config = vscode.workspace.getConfiguration('gitBlameInline');
           this.enabled = config.get('enabled', true);
-          
+
           // 更新当前编辑器
           const editor = vscode.window.activeTextEditor;
           if (editor) {
@@ -161,11 +162,6 @@ export class BlameController {
 
     const document = editor.document;
 
-    if (document.uri.scheme === 'file' && document.isDirty) {
-      this.decorationProvider.clearDecorations(editor);
-      return;
-    }
-    
     const info = await this.getDocumentInfo(document);
     if (!info) {
       return;
@@ -179,9 +175,10 @@ export class BlameController {
         info.repoPath,
         info.filePath,
         info.commit,
-        info.cacheKey
+        info.cacheKey,
+        document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined
       );
-      
+
       // 获取远程仓库信息（如果还没有缓存）
       if (!this.remoteCache.has(info.repoPath)) {
         const remoteUrl = await this.gitService.getRemoteUrlForRepo(info.repoPath);
@@ -192,7 +189,7 @@ export class BlameController {
           this.remoteCache.set(info.repoPath, null);
         }
       }
-      
+
       if (blameMap) {
         this.trackDocumentCacheKey(document.uri.fsPath, info.cacheKey);
         this.blameCache.set(info.cacheKey, blameMap);
@@ -219,7 +216,7 @@ export class BlameController {
 
       const filePath = path.relative(repoPath, document.uri.fsPath);
       return {
-        cacheKey: `${repoPath}::${filePath}::working-tree`,
+        cacheKey: `${repoPath}::${filePath}::working-tree::v${document.version}`,
         repoPath,
         filePath
       };
@@ -295,12 +292,24 @@ export class BlameController {
       .forEach(editor => this.decorationProvider.clearDecorations(editor));
   }
 
+  private scheduleDocumentUpdate(document: vscode.TextDocument): void {
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
+
+    this.updateTimeout = setTimeout(() => {
+      vscode.window.visibleTextEditors
+        .filter(editor => editor.document.uri.toString() === document.uri.toString())
+        .forEach(editor => this.updateBlame(editor));
+    }, 0);
+  }
+
   /**
    * 切换 blame 显示
    */
   toggle(): void {
     this.enabled = !this.enabled;
-    
+
     // 更新配置
     const config = vscode.workspace.getConfiguration('gitBlameInline');
     config.update('enabled', this.enabled, vscode.ConfigurationTarget.Global);

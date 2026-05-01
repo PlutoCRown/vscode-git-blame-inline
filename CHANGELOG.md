@@ -3,7 +3,7 @@
 ## 1.1.2 - 2026-05-01
 ### Fixes
 - Support stash actions from workspace contexts.
-- Hide blame information while a file has unsaved changes.
+- Refresh blame decorations after unsaved file changes to avoid misplaced inline blame.
 
 ## 1.1.1 - 2026-04-12
 - Resolve the correct Git repository per file across the workspace (multi-root folders and nested repositories).
