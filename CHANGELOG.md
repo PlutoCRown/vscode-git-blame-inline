@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 - 2026-05-01
+### Fixes
+- Support stash actions from workspace contexts.
+- Hide blame information while a file has unsaved changes.
+
 ## 1.1.1 - 2026-04-12
 - Resolve the correct Git repository per file across the workspace (multi-root folders and nested repositories).
 - Clearer, more consistent user-facing copy and messages.

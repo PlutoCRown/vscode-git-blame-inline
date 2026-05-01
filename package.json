@@ -2,7 +2,7 @@
     "name": "git-blame-lite",
     "displayName": "%displayName%",
     "description": "%description%",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "publisher": "PlutoCRown",
     "author": "PlutoCRown",
     "license": "MIT",
