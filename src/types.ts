@@ -25,12 +25,3 @@ export interface RemoteInfo {
   repo: string;
   host: string;
 }
-
-/**
- * 文件 Blame 缓存
- */
-export interface FileBlameCache {
-  filePath: string;
-  blameInfo: Map<number, BlameInfo>;
-  timestamp: number;
-}

@@ -1,16 +1,5 @@
+import * as vscode from 'vscode';
 import { t } from './i18n';
-
-/**
- * 工具函数
- */
-
-/**
- * 检查文件是否在 Git 仓库中
- */
-export function isGitRepository(path: string): boolean {
-  // 这个函数可以扩展以检查 .git 目录
-  return true;
-}
 
 /**
  * 格式化相对时间
@@ -54,10 +43,8 @@ export function truncateText(text: string, maxLength: number): string {
  */
 export function formatDate(timestamp: number): string {
   const date = new Date(timestamp * 1000);
-  // 使用 VS Code 的语言环境
-  const vscode = require('vscode');
   const locale = vscode.env.language || 'en';
-  
+
   return date.toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',

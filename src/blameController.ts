@@ -6,6 +6,7 @@ import { BlameHoverProvider } from './hoverProvider';
 import { BlameInfo, RemoteInfo } from './types';
 import { t } from './i18n';
 import { decodeDiffDocUri, DiffDocProvider } from './diffDocProvider';
+import { parseGitUriQuery } from './uriUtils';
 
 /**
  * Blame 控制器：协调各组件工作
@@ -232,14 +233,7 @@ export class BlameController {
     }
 
     if (document.uri.scheme === 'git') {
-      let queryPath: string | undefined;
-      let queryRef: string | undefined;
-      try {
-        const data = JSON.parse(document.uri.query) as { path?: string; ref?: string };
-        queryPath = data.path;
-        queryRef = data.ref;
-      } catch {}
-
+      const { path: queryPath, ref: queryRef } = parseGitUriQuery(document.uri);
       const fsPath = queryPath ?? document.uri.fsPath;
       const repoPath = await this.gitService.getRepositoryRoot(fsPath);
       if (!repoPath) {

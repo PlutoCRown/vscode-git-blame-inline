@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import { t } from './i18n';
 import { GitService } from './gitService';
+import { findRepositoryForPath, getFilePathFromUri, isSameOrParentPath } from './uriUtils';
 
 const execFileAsync = promisify(execFile);
 const gitService = new GitService();
@@ -15,6 +16,23 @@ let diffDocProvider: DiffDocProvider | undefined;
 
 type GitApi = {
   repositories: Array<{ rootUri: vscode.Uri }>;
+};
+
+type GitBlameStashChoice = {
+  label: string;
+  value: 'staged' | 'unstaged';
+};
+
+type StashResourceState = {
+  resourceUri?: vscode.Uri;
+};
+
+type StashResourceGroup = {
+  id?: string;
+  resourceStates?: ReadonlyArray<StashResourceState>;
+  sourceControl?: { rootUri?: vscode.Uri };
+  provider?: { rootUri?: vscode.Uri };
+  repository?: { rootUri?: vscode.Uri };
 };
 
 /**
@@ -61,8 +79,8 @@ export function activate(context: vscode.ExtensionContext) {
   // 注册 Stash 命令
   const stashCommand = vscode.commands.registerCommand(
     'git-blame-lite.stashChanges',
-    async (...args: any[]) => {
-      await stashChanges(args[0]);
+    async (...args: unknown[]) => {
+      await stashChanges(args[0] as StashResourceGroup | undefined);
     }
   );
   context.subscriptions.push(stashCommand);
@@ -137,24 +155,19 @@ async function showCommitDiff(commitHash: string): Promise<void> {
     const leftUri = encodeDiffDocUri(cwd, relativeFilePath, parentHash, true);
     const rightUri = encodeDiffDocUri(cwd, relativeFilePath, commitHash, true);
 
-    await vscode.commands.executeCommand(
-      'vscode.diff',
-      leftUri,
-      rightUri,
-      `${fileName} (${shortParentHash} ↔ ${shortHash})`,
-      { preview: true }
-    );
+    await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, `${fileName} (${shortParentHash} ↔ ${shortHash})`, { preview: true });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     console.error('Failed to show commit diff:', error);
-    vscode.window.showErrorMessage(`${t.error.showDiffFailed}: ${error.message || error}`);
+    vscode.window.showErrorMessage(`${t.error.showDiffFailed}: ${msg}`);
   }
 }
 
 /**
  * Stash 更改
  */
-async function stashChanges(resourceGroup: any): Promise<void> {
+async function stashChanges(resourceGroup?: StashResourceGroup) {
   try {
     console.log('stashChanges called with:', resourceGroup);
 
@@ -190,7 +203,7 @@ async function stashChanges(resourceGroup: any): Promise<void> {
         [
           { label: t.stash.staged, value: 'staged' },
           { label: t.stash.unstaged, value: 'unstaged' }
-        ],
+        ] satisfies GitBlameStashChoice[],
         { placeHolder: t.stash.selectType }
       );
 
@@ -217,30 +230,18 @@ async function stashChanges(resourceGroup: any): Promise<void> {
     // 根据资源组类型执行不同的 stash 命令
     if (isStaged) {
       // Stash 暂存的更改
-      await execFileAsync('git', [
-        'stash',
-        'push',
-        '--staged',
-        '-m',
-        message || t.stash.defaultStagedMessage
-      ], { cwd });
+      await execFileAsync('git', ['stash', 'push', '--staged', '-m', message || t.stash.defaultStagedMessage], { cwd });
       console.log(t.success.stagedStashed);
     } else {
       // Stash 未暂存的更改（包括未跟踪的文件）
-      await execFileAsync('git', [
-        'stash',
-        'push',
-        '--keep-index',
-        '--include-untracked',
-        '-m',
-        message || t.stash.defaultUnstagedMessage
-      ], { cwd });
+      await execFileAsync('git', ['stash', 'push', '--keep-index', '--include-untracked', '-m', message || t.stash.defaultUnstagedMessage], { cwd });
       console.log(t.success.unstagedStashed);
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     console.error('Failed to stash changes:', error);
-    vscode.window.showErrorMessage(`${t.error.stashFailed}: ${error.message}`);
+    vscode.window.showErrorMessage(`${t.error.stashFailed}: ${msg}`);
   }
 }
 
@@ -258,7 +259,7 @@ async function getGitApi(): Promise<GitApi | null> {
 }
 
 async function resolveStashRepositoryRoot(
-  resourceGroup: any,
+  resourceGroup: StashResourceGroup | undefined,
   git: GitApi
 ): Promise<string | null> {
   const candidateFilePaths = [
@@ -266,6 +267,8 @@ async function resolveStashRepositoryRoot(
     getFilePathFromUri(vscode.window.activeTextEditor?.document.uri)
   ].filter((filePath): filePath is string => Boolean(filePath));
 
+  // 先从资源组里的文件路径反推仓库。
+  // 这一层会拿不到，通常是因为资源组没有绑定到具体文件，或者当前编辑器不是可解析的 file/git URI。
   for (const filePath of candidateFilePaths) {
     const repoPath = await gitService.getRepositoryRoot(filePath);
     if (repoPath) {
@@ -278,90 +281,41 @@ async function resolveStashRepositoryRoot(
     }
   }
 
-  const groupRoot = getResourceGroupRootPath(resourceGroup);
+  // 上一层失败后，尝试资源组自己的根路径。
+  // 这一层会拿不到，通常是因为资源组没有暴露 rootUri，或者这个 rootUri 不是 Git 根目录。
+  const groupRoot = resourceGroup?.sourceControl?.rootUri?.fsPath;
   if (groupRoot) {
     const repoPath = await gitService.getRepositoryRootFromDirectory(groupRoot);
-    if (repoPath) {
-      return repoPath;
-    }
-
+    if (repoPath) return repoPath;
     const repository = findRepositoryForPath(git.repositories, groupRoot);
-    if (repository) {
-      return repository.rootUri.fsPath;
-    }
+    if (repository) return repository.rootUri.fsPath;
   }
 
+  // 再往后，直接使用 Git 扩展已经识别到的仓库。
+  // 这一层会拿不到，通常是因为 Git 扩展当前没有打开仓库，或者仓库列表还没准备好。
   if (git.repositories.length === 1) {
     return git.repositories[0].rootUri.fsPath;
   }
 
+  // 如果 Git 扩展没有给出明确答案，就扫描工作区目录。
+  // 这一层会拿不到，通常是因为多仓库工作区里当前文件不落在任何已识别的仓库内。
   for (const workspaceFolder of vscode.workspace.workspaceFolders ?? []) {
     const repoPath = await gitService.getRepositoryRootFromDirectory(workspaceFolder.uri.fsPath);
-    if (repoPath) {
-      return repoPath;
-    }
+    if (repoPath) return repoPath;
   }
 
+  // 最后只能退回到 Git 扩展给出的第一个仓库，至少避免直接失败。
   return git.repositories[0]?.rootUri.fsPath ?? null;
 }
 
-function getResourceGroupFilePath(resourceGroup: any): string | undefined {
-  const resourceStates = resourceGroup?.resourceStates;
-  if (!Array.isArray(resourceStates)) {
-    return undefined;
-  }
-
+function getResourceGroupFilePath(resourceGroup: StashResourceGroup | undefined): string | undefined {
+  const resourceStates = resourceGroup?.resourceStates || [];
   for (const resourceState of resourceStates) {
     const filePath = getFilePathFromUri(resourceState?.resourceUri);
-    if (filePath) {
-      return filePath;
-    }
+    if (filePath) return filePath;
   }
 
   return undefined;
-}
-
-function getResourceGroupRootPath(resourceGroup: any): string | undefined {
-  const uri = resourceGroup?.sourceControl?.rootUri
-    ?? resourceGroup?.provider?.rootUri
-    ?? resourceGroup?.repository?.rootUri;
-
-  return uri?.fsPath;
-}
-
-function getFilePathFromUri(uri: vscode.Uri | undefined): string | undefined {
-  if (!uri) {
-    return undefined;
-  }
-
-  if (uri.scheme === 'file') {
-    return uri.fsPath;
-  }
-
-  if (uri.scheme === 'git') {
-    try {
-      const data = JSON.parse(uri.query) as { path?: string };
-      return data.path;
-    } catch {
-      return uri.fsPath;
-    }
-  }
-
-  return undefined;
-}
-
-function findRepositoryForPath(
-  repositories: Array<{ rootUri: vscode.Uri }>,
-  filePath: string
-): { rootUri: vscode.Uri } | undefined {
-  return repositories
-    .filter(repository => isSameOrParentPath(filePath, repository.rootUri.fsPath))
-    .sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length)[0];
-}
-
-function isSameOrParentPath(filePath: string, parentPath: string): boolean {
-  const relativePath = path.relative(path.resolve(parentPath), path.resolve(filePath));
-  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
 /**
