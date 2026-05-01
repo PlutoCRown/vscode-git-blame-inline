@@ -6,7 +6,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import { t } from './i18n';
 import { GitService } from './gitService';
-import { findRepositoryForPath, getFilePathFromUri, isSameOrParentPath } from './uriUtils';
+import { findRepositoryForPath, getFilePathFromUri } from './uriUtils';
 
 const execFileAsync = promisify(execFile);
 const gitService = new GitService();

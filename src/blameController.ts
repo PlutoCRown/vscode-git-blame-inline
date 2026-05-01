@@ -103,6 +103,7 @@ export class BlameController {
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument(event => {
         this.clearDocumentCaches(event.document.uri);
+        this.clearDocumentDecorations(event.document);
       })
     );
 
@@ -159,6 +160,11 @@ export class BlameController {
     }
 
     const document = editor.document;
+
+    if (document.uri.scheme === 'file' && document.isDirty) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
     
     const info = await this.getDocumentInfo(document);
     if (!info) {
@@ -281,6 +287,12 @@ export class BlameController {
     this.documentInfoCache.delete(documentUri.toString());
     this.gitService.clearCache(documentPath);
     this.blameCache.delete(documentPath);
+  }
+
+  private clearDocumentDecorations(document: vscode.TextDocument): void {
+    vscode.window.visibleTextEditors
+      .filter(editor => editor.document.uri.toString() === document.uri.toString())
+      .forEach(editor => this.decorationProvider.clearDecorations(editor));
   }
 
   /**
