@@ -13,6 +13,10 @@ const gitService = new GitService();
 let blameController: BlameController | undefined;
 let diffDocProvider: DiffDocProvider | undefined;
 
+type GitApi = {
+  repositories: Array<{ rootUri: vscode.Uri }>;
+};
+
 /**
  * 扩展激活
  */
@@ -95,13 +99,7 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       relativeFilePath = data.filePath;
       fileName = path.basename(relativeFilePath);
     } else if (editor.document.uri.scheme === 'git') {
-      let queryPath: string | undefined;
-      try {
-        const data = JSON.parse(editor.document.uri.query) as { path?: string };
-        queryPath = data.path;
-      } catch {}
-
-      const fsPath = queryPath ?? editor.document.uri.fsPath;
+      const fsPath = getFilePathFromUri(editor.document.uri) ?? editor.document.uri.fsPath;
       const repoPath = await gitService.getRepositoryRoot(fsPath);
       if (!repoPath) {
         vscode.window.showErrorMessage(t.error.notInWorkspace);
@@ -161,29 +159,17 @@ async function stashChanges(resourceGroup: any): Promise<void> {
     console.log('stashChanges called with:', resourceGroup);
 
     // 获取 Git 扩展 API
-    const gitExtension = vscode.extensions.getExtension('vscode.git');
-    if (!gitExtension) {
+    const git = await getGitApi();
+    if (!git) {
       vscode.window.showErrorMessage(t.error.noGitExtension);
       return;
     }
 
-    const git = gitExtension.exports.getAPI(1);
-    if (git.repositories.length === 0) {
+    const cwd = await resolveStashRepositoryRoot(resourceGroup, git);
+    if (!cwd) {
       vscode.window.showErrorMessage(t.error.noRepository);
       return;
     }
-
-    // 获取当前仓库
-    const activeFilePath = vscode.window.activeTextEditor?.document.uri.fsPath;
-    const matchedRepo = activeFilePath
-      ? git.repositories.find((repository: any) => {
-          const repoPath = repository.rootUri.fsPath;
-          return activeFilePath === repoPath || activeFilePath.startsWith(repoPath + path.sep);
-        })
-      : undefined;
-
-    const repo = matchedRepo ?? git.repositories[0];
-    const cwd = repo.rootUri.fsPath;
 
     // 判断是哪个资源组
     const groupId = resourceGroup?.id;
@@ -256,6 +242,126 @@ async function stashChanges(resourceGroup: any): Promise<void> {
     console.error('Failed to stash changes:', error);
     vscode.window.showErrorMessage(`${t.error.stashFailed}: ${error.message}`);
   }
+}
+
+async function getGitApi(): Promise<GitApi | null> {
+  const gitExtension = vscode.extensions.getExtension('vscode.git');
+  if (!gitExtension) {
+    return null;
+  }
+
+  const gitExtensionExports = gitExtension.isActive
+    ? gitExtension.exports
+    : await gitExtension.activate();
+
+  return gitExtensionExports.getAPI(1);
+}
+
+async function resolveStashRepositoryRoot(
+  resourceGroup: any,
+  git: GitApi
+): Promise<string | null> {
+  const candidateFilePaths = [
+    getResourceGroupFilePath(resourceGroup),
+    getFilePathFromUri(vscode.window.activeTextEditor?.document.uri)
+  ].filter((filePath): filePath is string => Boolean(filePath));
+
+  for (const filePath of candidateFilePaths) {
+    const repoPath = await gitService.getRepositoryRoot(filePath);
+    if (repoPath) {
+      return repoPath;
+    }
+
+    const repository = findRepositoryForPath(git.repositories, filePath);
+    if (repository) {
+      return repository.rootUri.fsPath;
+    }
+  }
+
+  const groupRoot = getResourceGroupRootPath(resourceGroup);
+  if (groupRoot) {
+    const repoPath = await gitService.getRepositoryRootFromDirectory(groupRoot);
+    if (repoPath) {
+      return repoPath;
+    }
+
+    const repository = findRepositoryForPath(git.repositories, groupRoot);
+    if (repository) {
+      return repository.rootUri.fsPath;
+    }
+  }
+
+  if (git.repositories.length === 1) {
+    return git.repositories[0].rootUri.fsPath;
+  }
+
+  for (const workspaceFolder of vscode.workspace.workspaceFolders ?? []) {
+    const repoPath = await gitService.getRepositoryRootFromDirectory(workspaceFolder.uri.fsPath);
+    if (repoPath) {
+      return repoPath;
+    }
+  }
+
+  return git.repositories[0]?.rootUri.fsPath ?? null;
+}
+
+function getResourceGroupFilePath(resourceGroup: any): string | undefined {
+  const resourceStates = resourceGroup?.resourceStates;
+  if (!Array.isArray(resourceStates)) {
+    return undefined;
+  }
+
+  for (const resourceState of resourceStates) {
+    const filePath = getFilePathFromUri(resourceState?.resourceUri);
+    if (filePath) {
+      return filePath;
+    }
+  }
+
+  return undefined;
+}
+
+function getResourceGroupRootPath(resourceGroup: any): string | undefined {
+  const uri = resourceGroup?.sourceControl?.rootUri
+    ?? resourceGroup?.provider?.rootUri
+    ?? resourceGroup?.repository?.rootUri;
+
+  return uri?.fsPath;
+}
+
+function getFilePathFromUri(uri: vscode.Uri | undefined): string | undefined {
+  if (!uri) {
+    return undefined;
+  }
+
+  if (uri.scheme === 'file') {
+    return uri.fsPath;
+  }
+
+  if (uri.scheme === 'git') {
+    try {
+      const data = JSON.parse(uri.query) as { path?: string };
+      return data.path;
+    } catch {
+      return uri.fsPath;
+    }
+  }
+
+  return undefined;
+}
+
+function findRepositoryForPath(
+  repositories: Array<{ rootUri: vscode.Uri }>,
+  filePath: string
+): { rootUri: vscode.Uri } | undefined {
+  return repositories
+    .filter(repository => isSameOrParentPath(filePath, repository.rootUri.fsPath))
+    .sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length)[0];
+}
+
+function isSameOrParentPath(filePath: string, parentPath: string): boolean {
+  const relativePath = path.relative(path.resolve(parentPath), path.resolve(filePath));
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
 /**

@@ -23,7 +23,7 @@ export interface RemoteInfo {
   baseUrl: string;
   owner: string;
   repo: string;
-  host: 'GitHub' | 'GitLab' | 'Gitea' | 'Bitbucket' | 'Azure DevOps' | 'Unknown';
+  host: string;
 }
 
 /**
