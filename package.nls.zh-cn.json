@@ -6,7 +6,5 @@
     "command.stashChanges": "暂存更改...",
     "config.title": "Git Blame Lite",
     "config.enabled": "启用/禁用行内 blame 信息显示",
-    "config.format": "Blame 信息显示格式。可用变量：{author}, {time}, {message}, {hash}",
-    "config.messageLength": "提交信息最大显示长度",
     "config.showStashButton": "在源代码管理资源组中显示 Stash 按钮"
 }

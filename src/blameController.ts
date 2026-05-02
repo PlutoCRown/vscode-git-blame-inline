@@ -77,25 +77,26 @@ export class BlameController {
       })
     );
 
-    // 监听光标位置变化（使用防抖避免过于频繁的更新）
+    // 监听光标位置变化：优先使用已缓存的 blame 信息同步更新，保证多光标移动时装饰实时刷新
     this.disposables.push(
       vscode.window.onDidChangeTextEditorSelection(event => {
-        // 清除之前的定时器
-        if (this.updateTimeout) {
-          clearTimeout(this.updateTimeout);
+        if (!this.enabled) {
+          return;
         }
-        // 使用防抖延迟更新，不立即清除装饰以避免闪烁
-        this.updateTimeout = setTimeout(() => {
-          const hasGitDiff = vscode.window.visibleTextEditors.some(
-            e => e.document.uri.scheme === 'git'
-          );
-          const isDiff = event.textEditor.document.uri.scheme === DiffDocProvider.scheme;
-          if (isDiff || hasGitDiff) {
-            vscode.window.visibleTextEditors.forEach(editor => this.updateBlame(editor));
-          } else {
-            this.updateBlame(event.textEditor);
+
+        const hasGitDiff = vscode.window.visibleTextEditors.some(
+          e => e.document.uri.scheme === 'git'
+        );
+        const isDiff = event.textEditor.document.uri.scheme === DiffDocProvider.scheme;
+        const editors = isDiff || hasGitDiff
+          ? vscode.window.visibleTextEditors
+          : [event.textEditor];
+
+        for (const editor of editors) {
+          if (!this.updateDecorationsFromCachedBlame(editor)) {
+            this.updateBlame(editor);
           }
-        }, 50);
+        }
       })
     );
 
@@ -200,6 +201,21 @@ export class BlameController {
     } catch (error) {
       console.error('Failed to update blame:', error);
     }
+  }
+
+  private updateDecorationsFromCachedBlame(editor: vscode.TextEditor): boolean {
+    const key = this.getCacheKey(editor.document);
+    if (!key) {
+      return false;
+    }
+
+    const blameMap = this.blameCache.get(key);
+    if (!blameMap) {
+      return false;
+    }
+
+    this.decorationProvider.updateDecorations(editor, blameMap);
+    return true;
   }
 
   private async getDocumentInfo(document: vscode.TextDocument): Promise<{

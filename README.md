@@ -37,6 +37,16 @@ Easily stash staged or unstaged changes with custom messages from the Source Con
 
 ## ❓ FAQ
 
+### Why not use VS Code's built-in Git Blame in Editor?
+
+VS Code now includes a built-in Git Blame in Editor feature, but it is disabled by default and does not provide the same focused reading experience:
+
+- **Too visually bright** - The built-in blame decoration can stand out too much in the editor, making the code harder to scan
+- **Noisy hover panel** - Its hover panel includes too much secondary information, which makes it slower to find the details you actually need
+- **Cleaner by design** - Git Blame Lite keeps the inline style subtle and the hover content focused on useful commit context
+
+If you want blame information that stays readable without taking over the editor, Git Blame Lite offers a cleaner experience.
+
 ### Why not use GitLens?
 
 While GitLens is a powerful tool, this extension offers a lightweight alternative focused specifically on inline blame display:
