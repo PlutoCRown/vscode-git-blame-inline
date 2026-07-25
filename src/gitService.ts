@@ -162,6 +162,8 @@ export class GitService {
     let currentTimestamp = 0;
     let currentSummary = '';
     let currentLineNumber = 0;
+    let currentPathAtCommit = '';
+    let currentPreviousPath = '';
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -171,6 +173,8 @@ export class GitService {
         const parts = line.split(' ');
         currentHash = parts[0];
         currentLineNumber = parseInt(parts[2], 10);
+        currentPathAtCommit = '';
+        currentPreviousPath = '';
       } else if (line.startsWith('author ')) {
         currentAuthor = line.substring(7);
       } else if (line.startsWith('author-mail ')) {
@@ -179,6 +183,14 @@ export class GitService {
         currentTimestamp = parseInt(line.substring(12), 10);
       } else if (line.startsWith('summary ')) {
         currentSummary = line.substring(8);
+      } else if (line.startsWith('filename ')) {
+        currentPathAtCommit = line.substring(9);
+      } else if (line.startsWith('previous ')) {
+        // previous <hash> <path>
+        const previousParts = line.substring(9).split(' ');
+        if (previousParts.length >= 2) {
+          currentPreviousPath = previousParts.slice(1).join(' ');
+        }
       } else if (line.startsWith('\t')) {
         // 实际代码行，保存 blame 信息（含尚未提交的本地改动）
         if (currentHash && currentLineNumber > 0) {
@@ -190,7 +202,9 @@ export class GitService {
             timestamp: currentTimestamp,
             summary: currentSummary,
             lineNumber: currentLineNumber,
-            isUncommitted
+            isUncommitted,
+            pathAtCommit: currentPathAtCommit || undefined,
+            previousPath: currentPreviousPath || undefined
           });
         }
       }
@@ -256,10 +270,26 @@ export class GitService {
   }
 
   /**
-   * 获取文件所属的 Git 仓库根目录
+   * 获取文件所属的 Git 仓库根目录。
+   * 会沿父目录向上查找，以支持 rename 后旧路径目录已不存在的情况。
    */
   async getRepositoryRoot(filePath: string): Promise<string | null> {
-    return this.getRepositoryRootFromDirectory(path.dirname(filePath));
+    let dir = path.resolve(path.dirname(filePath));
+
+    for (let i = 0; i < 64; i++) {
+      const root = await this.getRepositoryRootFromDirectory(dir);
+      if (root) {
+        return root;
+      }
+
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        break;
+      }
+      dir = parent;
+    }
+
+    return null;
   }
 
   /**

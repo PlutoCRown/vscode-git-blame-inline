@@ -28,8 +28,12 @@ export class BlameController {
   private enabled = true;
   private updateTimeout: NodeJS.Timeout | undefined;
 
-  // 存储当前光标位置的 commit hash，供命令使用
+  // 存储当前光标位置的 commit 信息，供命令使用
   static currentCommitHash: string | undefined;
+  /** 当前 blame 行在对应 commit 时的仓库内路径（处理 rename） */
+  static currentCommitFilePath: string | undefined;
+  /** parent 侧路径（rename 发生在该 commit 时） */
+  static currentPreviousFilePath: string | undefined;
 
   constructor(context: vscode.ExtensionContext) {
     this.gitService = new GitService();

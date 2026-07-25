@@ -65,11 +65,14 @@ export function activate(context: vscode.ExtensionContext) {
   const showCommitDiffCommand = vscode.commands.registerCommand(
     'git-blame-lite.showCommitDiff',
     async (commitHash?: string) => {
+      const { BlameController } = await import('./blameController');
       // 如果没有传递参数，从全局变量获取
-      const hash = commitHash || (await import('./blameController')).BlameController.currentCommitHash;
-      console.log('showCommitDiff called with:', hash, 'type:', typeof hash);
+      const hash = commitHash || BlameController.currentCommitHash;
+      const pathAtCommit = BlameController.currentCommitFilePath;
+      const previousPath = BlameController.currentPreviousFilePath;
+      console.log('showCommitDiff called with:', hash, pathAtCommit, previousPath);
       if (hash) {
-        await showCommitDiff(hash);
+        await showCommitDiff(hash, pathAtCommit, previousPath);
       } else {
         vscode.window.showErrorMessage(t.error.noCommitHash);
       }
@@ -90,7 +93,11 @@ export function activate(context: vscode.ExtensionContext) {
 /**
  * 显示 commit 的差异
  */
-async function showCommitDiff(commitHash: string): Promise<void> {
+async function showCommitDiff(
+  commitHash: string,
+  pathAtCommit?: string,
+  previousPath?: string
+): Promise<void> {
   if (!commitHash || typeof commitHash !== 'string') {
     vscode.window.showErrorMessage(`${t.error.showDiffFailed}: ${t.error.noCommitHash}`);
     console.error('showCommitDiff called with invalid commitHash:', commitHash);
@@ -106,7 +113,6 @@ async function showCommitDiff(commitHash: string): Promise<void> {
 
     let cwd: string;
     let relativeFilePath: string;
-    let fileName: string;
     let workingTreeUri: vscode.Uri;
 
     if (editor.document.uri.scheme === DiffDocProvider.scheme) {
@@ -117,7 +123,6 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       }
       cwd = data.repo;
       relativeFilePath = data.filePath;
-      fileName = path.basename(relativeFilePath);
       workingTreeUri = vscode.Uri.file(path.join(cwd, relativeFilePath));
     } else if (editor.document.uri.scheme === 'git') {
       const fsPath = getFilePathFromUri(editor.document.uri) ?? editor.document.uri.fsPath;
@@ -128,7 +133,6 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       }
       cwd = repoPath;
       relativeFilePath = path.relative(cwd, fsPath).split(path.sep).join('/');
-      fileName = path.basename(fsPath);
       workingTreeUri = vscode.Uri.file(fsPath);
     } else {
       const repoPath = await gitService.getRepositoryRoot(editor.document.uri.fsPath);
@@ -139,34 +143,54 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       cwd = repoPath;
       const filePath = editor.document.uri.fsPath;
       relativeFilePath = path.relative(cwd, filePath).split(path.sep).join('/');
-      fileName = path.basename(filePath);
       workingTreeUri = editor.document.uri;
     }
 
     // 未提交改动：对比 HEAD ↔ 工作区文件
     if (commitHash === UNCOMMITTED_HASH) {
+      const fileName = path.basename(relativeFilePath);
       await showUncommittedDiff(cwd, relativeFilePath, fileName, workingTreeUri);
       return;
     }
+
+    // rename 后应用历史路径：blame 的 filename 是该 commit 时的路径
+    const rightPath = (pathAtCommit || relativeFilePath).split(path.sep).join('/');
 
     // 获取父 commit hash
     let parentHash: string;
     try {
       const { stdout: parentStdout } = await execFileAsync('git', ['rev-parse', `${commitHash}^`], { cwd });
       parentHash = parentStdout.trim();
-    } catch (error) {
-      // 如果是第一个 commit，没有父 commit，则与空树比较
+    } catch {
       parentHash = '4b825dc642cb6eb9a060e54bf8d34988fbee4904'; // Git empty tree hash
+    }
+
+    // parent 侧路径：若该 commit 发生了 rename，则用 previous；否则与 right 相同
+    let leftPath = rightPath;
+    const rightExists = await pathExistsInCommit(cwd, commitHash, rightPath);
+    let leftExists = await pathExistsInCommit(cwd, parentHash, leftPath);
+    if (!leftExists && previousPath) {
+      const normalizedPrevious = previousPath.split(path.sep).join('/');
+      if (await pathExistsInCommit(cwd, parentHash, normalizedPrevious)) {
+        leftPath = normalizedPrevious;
+        leftExists = true;
+      }
     }
 
     const shortHash = commitHash.substring(0, 8);
     const shortParentHash = parentHash.substring(0, 8);
+    const titleName = path.basename(rightPath);
 
-    // 使用自定义的 DiffDocProvider 创建 URI
-    const leftUri = encodeDiffDocUri(cwd, relativeFilePath, parentHash, true);
-    const rightUri = encodeDiffDocUri(cwd, relativeFilePath, commitHash, true);
+    const leftUri = encodeDiffDocUri(cwd, leftPath, parentHash, leftExists);
+    const rightUri = encodeDiffDocUri(cwd, rightPath, commitHash, rightExists);
 
-    await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, `${fileName} (${shortParentHash} ↔ ${shortHash})`, { preview: true });
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      leftUri,
+      rightUri,
+      `${titleName} (${shortParentHash} ↔ ${shortHash})`,
+      { preview: true }
+    );
 
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -175,16 +199,27 @@ async function showCommitDiff(commitHash: string): Promise<void> {
   }
 }
 
-/**
- * 显示未提交改动的差异（使用 VS Code 内置 Git 的 diff view，与 SCM「打开更改」相同）
- */
+async function pathExistsInCommit(
+  cwd: string,
+  commit: string,
+  filePath: string
+): Promise<boolean> {
+  try {
+    await execFileAsync('git', ['cat-file', '-e', `${commit}:${filePath}`], { cwd });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function showUncommittedDiff(
   _cwd: string,
   _relativeFilePath: string,
   fileName: string,
   workingTreeUri: vscode.Uri
 ): Promise<void> {
-  // 与内置 Git SCM 相同：左侧 git:（ref=~），右侧工作区文件
+  // 与 SCM「打开更改」相同：左侧 git:（ref=~），右侧工作区文件。
+  // 右侧必须是真实 file URI，不能指向 rename 后已删除的旧路径。
   const gitUri = workingTreeUri.with({
     scheme: 'git',
     query: JSON.stringify({ path: workingTreeUri.fsPath, ref: '~' })

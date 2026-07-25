@@ -16,6 +16,16 @@ export interface BlameInfo {
   lineNumber: number;
   /** 是否为尚未提交的本地改动 */
   isUncommitted?: boolean;
+  /**
+   * 该行对应 commit 时的仓库内路径（rename 后可能与当前文件名不同）
+   * 来自 git blame porcelain 的 filename 字段
+   */
+  pathAtCommit?: string;
+  /**
+   * 上一版本路径（rename/copy 时用于 parent 侧内容）
+   * 来自 git blame porcelain 的 previous 字段
+   */
+  previousPath?: string;
 }
 
 /** git blame 对未提交行使用的占位 hash */
