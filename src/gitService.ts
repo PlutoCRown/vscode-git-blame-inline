@@ -16,6 +16,55 @@ export class GitService {
   private readonly CACHE_TTL = 60000; // 缓存 60 秒
 
   /**
+   * 将 VS Code 内置 Git 的 git: URI ref 解析为可 blame 的目标。
+   * VS Code 使用私有标记：`~`（HEAD 或 index）、`''`（index）、`~1/~2/~3`（冲突 stage）。
+   */
+  async resolveGitUriBlameTarget(
+    repoPath: string,
+    filePath: string,
+    ref: string | undefined
+  ): Promise<{ commit?: string; contents?: string; cacheKeySuffix: string } | null> {
+    if (ref === undefined) {
+      return { cacheKeySuffix: 'working-tree' };
+    }
+
+    // 空字符串 = index（暂存区）
+    if (ref === '') {
+      const contents = await this.getGitObjectContents(repoPath, filePath);
+      if (contents === null) {
+        return null;
+      }
+      return { contents, cacheKeySuffix: 'index' };
+    }
+
+    // `~`：有暂存版本则用 index，否则用 HEAD（与 VS Code sanitizeRef 一致）
+    if (ref === '~') {
+      const hasStaged = await this.hasStagedVersion(repoPath, filePath);
+      if (hasStaged) {
+        const contents = await this.getGitObjectContents(repoPath, filePath);
+        if (contents === null) {
+          return null;
+        }
+        return { contents, cacheKeySuffix: 'index' };
+      }
+      return { commit: 'HEAD', cacheKeySuffix: 'HEAD' };
+    }
+
+    // `~1` / `~2` / `~3` → merge stage `:1` / `:2` / `:3`
+    const stageMatch = /^~(\d)$/.exec(ref);
+    if (stageMatch) {
+      const stage = stageMatch[1];
+      const contents = await this.getGitObjectContents(repoPath, filePath, stage);
+      if (contents === null) {
+        return null;
+      }
+      return { contents, cacheKeySuffix: `stage-${stage}` };
+    }
+
+    return { commit: ref, cacheKeySuffix: ref };
+  }
+
+  /**
    * 获取指定仓库/文件/提交的 blame 信息
    */
   async getBlameForRepoFile(
@@ -27,11 +76,9 @@ export class GitService {
   ): Promise<Map<number, BlameInfo> | null> {
     const key = cacheKey ?? `${repoPath}::${filePath}::${commit ?? 'working-tree'}`;
 
-    if (contents === undefined) {
-      const cached = this.getCachedBlame(key);
-      if (cached) {
-        return cached;
-      }
+    const cached = this.getCachedBlame(key);
+    if (cached) {
+      return cached;
     }
 
     try {
@@ -48,14 +95,43 @@ export class GitService {
 
       const blameMap = this.parseBlameOutput(stdout);
 
-      if (contents === undefined) {
-        this.cache.set(key, blameMap);
-        this.cacheTimestamps.set(key, Date.now());
-      }
+      this.cache.set(key, blameMap);
+      this.cacheTimestamps.set(key, Date.now());
 
       return blameMap;
     } catch (error) {
       console.error('Git blame failed:', error);
+      return null;
+    }
+  }
+
+  private async hasStagedVersion(repoPath: string, filePath: string): Promise<boolean> {
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['diff', '--cached', '--name-only', '--', filePath],
+        { cwd: repoPath, maxBuffer: 1024 * 1024 }
+      );
+      return stdout.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private async getGitObjectContents(
+    repoPath: string,
+    filePath: string,
+    stage?: string
+  ): Promise<string | null> {
+    try {
+      const object = stage ? `:${stage}:${filePath}` : `:${filePath}`;
+      const { stdout } = await execFileAsync('git', ['show', object], {
+        cwd: repoPath,
+        maxBuffer: 10 * 1024 * 1024,
+        encoding: 'utf8'
+      });
+      return stdout;
+    } catch {
       return null;
     }
   }
@@ -121,17 +197,22 @@ export class GitService {
     }
 
     return new Promise((resolve, reject) => {
-      const child = execFile('git', args, {
-        cwd,
-        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-      }, (error, stdout, stderr) => {
-        if (error) {
-          reject(error);
-          return;
-        }
+      const child = execFile(
+        'git',
+        args,
+        {
+          cwd,
+          maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+        },
+        (error: Error | null, stdout: string, stderr: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
 
-        resolve({ stdout, stderr });
-      });
+          resolve({ stdout, stderr });
+        }
+      );
 
       child.stdin?.end(input);
     });

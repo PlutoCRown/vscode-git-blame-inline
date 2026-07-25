@@ -21,6 +21,7 @@ export class BlameController {
     repoPath: string;
     filePath: string;
     commit?: string;
+    contents?: string;
   }>();
   private documentCacheKeys = new Map<string, Set<string>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
@@ -64,15 +65,19 @@ export class BlameController {
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor(editor => {
         if (editor) {
-          const hasGitDiff = vscode.window.visibleTextEditors.some(
-            e => e.document.uri.scheme === 'git'
-          );
-          if (editor.document.uri.scheme === DiffDocProvider.scheme || hasGitDiff) {
-            vscode.window.visibleTextEditors
-              .forEach(e => this.updateBlame(e));
-          } else {
-            this.updateBlame(editor);
-          }
+          this.updateVisibleDiffEditors(editor);
+        }
+      })
+    );
+
+    // Diff 两侧进入可见列表时再刷一次（SCM 打开时左侧可能尚未成为 active）
+    this.disposables.push(
+      vscode.window.onDidChangeVisibleTextEditors(editors => {
+        const hasDiff = editors.some(
+          e => e.document.uri.scheme === 'git' || e.document.uri.scheme === DiffDocProvider.scheme
+        );
+        if (hasDiff) {
+          editors.forEach(e => this.updateBlame(e));
         }
       })
     );
@@ -156,6 +161,17 @@ export class BlameController {
   /**
    * 更新编辑器的 blame 信息
    */
+  private updateVisibleDiffEditors(editor: vscode.TextEditor): void {
+    const hasGitDiff = vscode.window.visibleTextEditors.some(
+      e => e.document.uri.scheme === 'git'
+    );
+    if (editor.document.uri.scheme === DiffDocProvider.scheme || hasGitDiff) {
+      vscode.window.visibleTextEditors.forEach(e => this.updateBlame(e));
+    } else {
+      this.updateBlame(editor);
+    }
+  }
+
   private async updateBlame(editor: vscode.TextEditor): Promise<void> {
     if (!this.enabled) {
       return;
@@ -177,7 +193,8 @@ export class BlameController {
         info.filePath,
         info.commit,
         info.cacheKey,
-        document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined
+        info.contents ??
+        (document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined)
       );
 
       // 获取远程仓库信息（如果还没有缓存）
@@ -223,6 +240,7 @@ export class BlameController {
     repoPath: string;
     filePath: string;
     commit?: string;
+    contents?: string;
   } | null> {
     if (document.uri.scheme === 'file') {
       const repoPath = await this.gitService.getRepositoryRoot(document.uri.fsPath);
@@ -259,12 +277,18 @@ export class BlameController {
         return null;
       }
 
-      const filePath = path.relative(repoPath, fsPath);
+      const filePath = path.relative(repoPath, fsPath).split(path.sep).join('/');
+      const target = await this.gitService.resolveGitUriBlameTarget(repoPath, filePath, queryRef);
+      if (!target) {
+        return null;
+      }
+
       return {
-        cacheKey: `${repoPath}::${filePath}::${queryRef ?? 'git'}`,
+        cacheKey: `${repoPath}::${filePath}::${target.cacheKeySuffix}`,
         repoPath,
         filePath,
-        commit: queryRef
+        commit: target.commit,
+        contents: target.contents
       };
     }
 
