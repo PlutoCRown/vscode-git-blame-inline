@@ -26,6 +26,7 @@ export class BlameController {
   private documentCacheKeys = new Map<string, Set<string>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
+  private updateTimeout: NodeJS.Timeout | undefined;
 
   // 存储当前光标位置的 commit hash，供命令使用
   static currentCommitHash: string | undefined;
@@ -42,7 +43,12 @@ export class BlameController {
           return undefined;
         }
         const blameMap = this.blameCache.get(key);
-        return blameMap?.get(line);
+        const info = blameMap?.get(line);
+        // dirty 时不展示 Not Committed Yet，其余正常
+        if (info?.isUncommitted && document.isDirty) {
+          return undefined;
+        }
+        return info;
       },
       (document) => {
         const repoPath = this.getRepoPath(document);
@@ -88,12 +94,6 @@ export class BlameController {
           return;
         }
 
-        // 未保存的 dirty 文件不展示 blame，等保存后再显示
-        if (event.textEditor.document.uri.scheme === 'file' && event.textEditor.document.isDirty) {
-          this.decorationProvider.clearDecorations(event.textEditor);
-          return;
-        }
-
         const hasGitDiff = vscode.window.visibleTextEditors.some(
           e => e.document.uri.scheme === 'git'
         );
@@ -103,10 +103,6 @@ export class BlameController {
           : [event.textEditor];
 
         for (const editor of editors) {
-          if (editor.document.uri.scheme === 'file' && editor.document.isDirty) {
-            this.decorationProvider.clearDecorations(editor);
-            continue;
-          }
           if (!this.updateDecorationsFromCachedBlame(editor)) {
             this.updateBlame(editor);
           }
@@ -114,15 +110,15 @@ export class BlameController {
       })
     );
 
-    // 监听文档变化：dirty 期间清除装饰，不重新计算 blame
+    // 监听文档变化（清除缓存并延迟刷新；dirty 时仍显示已提交行的 blame）
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument(event => {
         this.clearDocumentCaches(event.document.uri);
-        this.clearDocumentDecorations(event.document);
+        this.scheduleDocumentUpdate(event.document);
       })
     );
 
-    // 监听文档保存（更新 blame，此时才展示未提交行）
+    // 监听文档保存（刷新 blame，此时未提交行才显示 Not Committed Yet）
     this.disposables.push(
       vscode.workspace.onDidSaveTextDocument(document => {
         const editor = vscode.window.visibleTextEditors.find(
@@ -187,12 +183,6 @@ export class BlameController {
 
     const document = editor.document;
 
-    // dirty 文件不展示 blame，等保存后再计算（含 You / Not Committed Yet）
-    if (document.uri.scheme === 'file' && document.isDirty) {
-      this.decorationProvider.clearDecorations(editor);
-      return;
-    }
-
     const info = await this.getDocumentInfo(document);
     if (!info) {
       return;
@@ -201,13 +191,14 @@ export class BlameController {
     this.documentInfoCache.set(document.uri.toString(), info);
 
     try {
-      // 获取 blame 信息（仅基于已保存内容，不传入未保存 buffer）
+      // dirty 时用编辑器内容对齐行号；未改动的行仍显示已提交 blame
       const blameMap = await this.gitService.getBlameForRepoFile(
         info.repoPath,
         info.filePath,
         info.commit,
         info.cacheKey,
-        info.contents
+        info.contents ??
+        (document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined)
       );
 
       // 获取远程仓库信息（如果还没有缓存）
@@ -222,7 +213,9 @@ export class BlameController {
       }
 
       if (blameMap) {
-        await this.applyUncommittedTimestamps(document, blameMap);
+        if (!document.isDirty) {
+          await this.applyUncommittedTimestamps(document, blameMap);
+        }
         this.trackDocumentCacheKey(document.uri.fsPath, info.cacheKey);
         this.blameCache.set(info.cacheKey, blameMap);
         this.decorationProvider.updateDecorations(editor, blameMap);
@@ -368,6 +361,18 @@ export class BlameController {
       .forEach(editor => this.decorationProvider.clearDecorations(editor));
   }
 
+  private scheduleDocumentUpdate(document: vscode.TextDocument): void {
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
+
+    this.updateTimeout = setTimeout(() => {
+      vscode.window.visibleTextEditors
+        .filter(editor => editor.document.uri.toString() === document.uri.toString())
+        .forEach(editor => this.updateBlame(editor));
+    }, 200);
+  }
+
   /**
    * 切换 blame 显示
    */
@@ -398,6 +403,9 @@ export class BlameController {
    * 释放资源
    */
   dispose(): void {
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
     this.disposables.forEach(d => d.dispose());
     this.decorationProvider.dispose();
     this.gitService.clearAllCache();

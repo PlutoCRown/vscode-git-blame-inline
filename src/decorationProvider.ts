@@ -39,7 +39,8 @@ export class DecorationProvider {
     for (const lineNum of cursorLines) {
       const blameInfo = blameMap.get(lineNum + 1); // blame 行号从 1 开始
 
-      if (blameInfo) {
+      // dirty 时隐藏 Not Committed Yet，已提交行照常显示
+      if (blameInfo && !(blameInfo.isUncommitted && editor.document.isDirty)) {
         const line = editor.document.lineAt(lineNum);
         const decoration = this.createDecoration(line, blameInfo);
         decorations.push(decoration);
