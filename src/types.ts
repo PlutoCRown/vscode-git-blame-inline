@@ -14,7 +14,12 @@ export interface BlameInfo {
   summary: string;
   /** 行号（从 1 开始） */
   lineNumber: number;
+  /** 是否为尚未提交的本地改动 */
+  isUncommitted?: boolean;
 }
+
+/** git blame 对未提交行使用的占位 hash */
+export const UNCOMMITTED_HASH = '0000000000000000000000000000000000000000';
 
 /**
  * 远程仓库信息

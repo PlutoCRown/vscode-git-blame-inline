@@ -7,6 +7,7 @@ import * as path from 'path';
 import { t } from './i18n';
 import { GitService } from './gitService';
 import { findRepositoryForPath, getFilePathFromUri } from './uriUtils';
+import { UNCOMMITTED_HASH } from './types';
 
 const execFileAsync = promisify(execFile);
 const gitService = new GitService();
@@ -106,6 +107,7 @@ async function showCommitDiff(commitHash: string): Promise<void> {
     let cwd: string;
     let relativeFilePath: string;
     let fileName: string;
+    let workingTreeUri: vscode.Uri;
 
     if (editor.document.uri.scheme === DiffDocProvider.scheme) {
       const data = decodeDiffDocUri(editor.document.uri);
@@ -116,6 +118,7 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       cwd = data.repo;
       relativeFilePath = data.filePath;
       fileName = path.basename(relativeFilePath);
+      workingTreeUri = vscode.Uri.file(path.join(cwd, relativeFilePath));
     } else if (editor.document.uri.scheme === 'git') {
       const fsPath = getFilePathFromUri(editor.document.uri) ?? editor.document.uri.fsPath;
       const repoPath = await gitService.getRepositoryRoot(fsPath);
@@ -124,8 +127,9 @@ async function showCommitDiff(commitHash: string): Promise<void> {
         return;
       }
       cwd = repoPath;
-      relativeFilePath = path.relative(cwd, fsPath);
+      relativeFilePath = path.relative(cwd, fsPath).split(path.sep).join('/');
       fileName = path.basename(fsPath);
+      workingTreeUri = vscode.Uri.file(fsPath);
     } else {
       const repoPath = await gitService.getRepositoryRoot(editor.document.uri.fsPath);
       if (!repoPath) {
@@ -134,8 +138,15 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       }
       cwd = repoPath;
       const filePath = editor.document.uri.fsPath;
-      relativeFilePath = path.relative(cwd, filePath);
+      relativeFilePath = path.relative(cwd, filePath).split(path.sep).join('/');
       fileName = path.basename(filePath);
+      workingTreeUri = editor.document.uri;
+    }
+
+    // 未提交改动：对比 HEAD ↔ 工作区文件
+    if (commitHash === UNCOMMITTED_HASH) {
+      await showUncommittedDiff(cwd, relativeFilePath, fileName, workingTreeUri);
+      return;
     }
 
     // 获取父 commit hash
@@ -145,7 +156,7 @@ async function showCommitDiff(commitHash: string): Promise<void> {
       parentHash = parentStdout.trim();
     } catch (error) {
       // 如果是第一个 commit，没有父 commit，则与空树比较
-      parentHash = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // Git empty tree hash
+      parentHash = '4b825dc642cb6eb9a060e54bf8d34988fbee4904'; // Git empty tree hash
     }
 
     const shortHash = commitHash.substring(0, 8);
@@ -162,6 +173,29 @@ async function showCommitDiff(commitHash: string): Promise<void> {
     console.error('Failed to show commit diff:', error);
     vscode.window.showErrorMessage(`${t.error.showDiffFailed}: ${msg}`);
   }
+}
+
+/**
+ * 显示未提交改动的差异（使用 VS Code 内置 Git 的 diff view，与 SCM「打开更改」相同）
+ */
+async function showUncommittedDiff(
+  _cwd: string,
+  _relativeFilePath: string,
+  fileName: string,
+  workingTreeUri: vscode.Uri
+): Promise<void> {
+  // 与内置 Git SCM 相同：左侧 git:（ref=~），右侧工作区文件
+  const gitUri = workingTreeUri.with({
+    scheme: 'git',
+    query: JSON.stringify({ path: workingTreeUri.fsPath, ref: '~' })
+  });
+  await vscode.commands.executeCommand(
+    'vscode.diff',
+    gitUri,
+    workingTreeUri,
+    `${fileName} (${t.diff.workingTree})`,
+    { preview: true }
+  );
 }
 
 /**

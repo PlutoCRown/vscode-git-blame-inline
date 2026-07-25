@@ -16,6 +16,15 @@ interface I18nStrings {
     viewOnHost: (host: string) => string;
     viewChanges: string;
   };
+  // 未提交改动
+  blame: {
+    you: string;
+    notCommittedYet: string;
+  };
+  // Diff 标题
+  diff: {
+    workingTree: string;
+  };
   // 相对时间
   time: {
     justNow: string;
@@ -68,6 +77,13 @@ const en: I18nStrings = {
     viewOnHost: (host: string) => `View on ${host}`,
     viewChanges: 'View Changes',
   },
+  blame: {
+    you: 'You',
+    notCommittedYet: 'Not Committed Yet',
+  },
+  diff: {
+    workingTree: 'Working Tree',
+  },
   time: {
     justNow: 'just now',
     minutesAgo: (n: number) => `${n} minute${n > 1 ? 's' : ''} ago`,
@@ -115,6 +131,13 @@ const zhCN: I18nStrings = {
     message: '提交信息',
     viewOnHost: (host: string) => `在 ${host} 中查看`,
     viewChanges: '查看更改',
+  },
+  blame: {
+    you: '你',
+    notCommittedYet: '尚未提交',
+  },
+  diff: {
+    workingTree: '工作区',
   },
   time: {
     justNow: '刚刚',

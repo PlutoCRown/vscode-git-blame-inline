@@ -60,12 +60,22 @@ export class BlameHoverProvider implements vscode.HoverProvider {
     md.isTrusted = true;
 
     const formattedDate = formatDate(blame.timestamp);
-    const shortHash = blame.hash.substring(0, 8);
 
-    // 创建格式化的 commit 信息（使用 HTML 限制宽度）
     md.appendMarkdown(`<div style="max-width: 600px; word-wrap: break-word;">\n\n`);
     md.appendMarkdown(`### ${t.hover.title}\n\n`);
 
+    if (blame.isUncommitted) {
+      md.appendMarkdown(`**${t.hover.author}:** ${t.blame.you}\n\n`);
+      md.appendMarkdown(`**${t.hover.time}:** ${formattedDate}\n\n`);
+      md.appendMarkdown(`**${t.hover.message}:** ${t.blame.notCommittedYet}\n\n`);
+      md.appendMarkdown(`---\n\n`);
+      BlameController.currentCommitHash = blame.hash;
+      md.appendMarkdown(`[${t.hover.viewChanges}](command:git-blame-lite.showCommitDiff)`);
+      md.appendMarkdown(`\n\n</div>`);
+      return md;
+    }
+
+    const shortHash = blame.hash.substring(0, 8);
     md.appendMarkdown(`**${t.hover.commit}:** \`${shortHash}\`\n\n`);
 
     // 作者信息（GitHub/GitLab 用户链接）

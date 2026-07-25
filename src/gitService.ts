@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
-import { BlameInfo, RemoteInfo } from './types';
+import { stat } from 'fs/promises';
+import { BlameInfo, RemoteInfo, UNCOMMITTED_HASH } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -105,6 +106,18 @@ export class GitService {
     }
   }
 
+  /**
+   * 获取文件最近修改时间（秒）。用于未提交行的相对时间展示。
+   */
+  async getFileMtimeSeconds(filePath: string): Promise<number | null> {
+    try {
+      const stats = await stat(filePath);
+      return Math.floor(stats.mtimeMs / 1000);
+    } catch {
+      return null;
+    }
+  }
+
   private async hasStagedVersion(repoPath: string, filePath: string): Promise<boolean> {
     try {
       const { stdout } = await execFileAsync(
@@ -167,15 +180,17 @@ export class GitService {
       } else if (line.startsWith('summary ')) {
         currentSummary = line.substring(8);
       } else if (line.startsWith('\t')) {
-        // 实际代码行，保存 blame 信息
-        if (currentHash && currentHash !== '0000000000000000000000000000000000000000' && currentLineNumber > 0) {
+        // 实际代码行，保存 blame 信息（含尚未提交的本地改动）
+        if (currentHash && currentLineNumber > 0) {
+          const isUncommitted = currentHash === UNCOMMITTED_HASH;
           blameMap.set(currentLineNumber, {
             hash: currentHash,
             author: currentAuthor,
             authorEmail: currentAuthorEmail,
             timestamp: currentTimestamp,
             summary: currentSummary,
-            lineNumber: currentLineNumber
+            lineNumber: currentLineNumber,
+            isUncommitted
           });
         }
       }

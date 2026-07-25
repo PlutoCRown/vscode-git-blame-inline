@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BlameInfo } from './types';
 import { formatRelativeTime, truncateText } from './utils';
+import { t } from './i18n';
 
 /**
  * 装饰提供器：在行尾显示 blame 信息
@@ -37,7 +38,7 @@ export class DecorationProvider {
     // 为每个光标所在行创建装饰
     for (const lineNum of cursorLines) {
       const blameInfo = blameMap.get(lineNum + 1); // blame 行号从 1 开始
-      
+
       if (blameInfo) {
         const line = editor.document.lineAt(lineNum);
         const decoration = this.createDecoration(line, blameInfo);
@@ -53,8 +54,11 @@ export class DecorationProvider {
    */
   private createDecoration(line: vscode.TextLine, blameInfo: BlameInfo): vscode.DecorationOptions {
     const relativeTime = formatRelativeTime(blameInfo.timestamp);
-    const shortSummary = truncateText(blameInfo.summary, 50);
-    const text = `${blameInfo.author}, ${relativeTime} • ${shortSummary}`;
+    const author = blameInfo.isUncommitted ? t.blame.you : blameInfo.author;
+    const summary = blameInfo.isUncommitted
+      ? t.blame.notCommittedYet
+      : truncateText(blameInfo.summary, 50);
+    const text = `${author}, ${relativeTime} • ${summary}`;
 
     return {
       range: new vscode.Range(
