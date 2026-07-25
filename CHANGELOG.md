@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.3 - 2026-07-25
+### Features
+- Show uncommitted changes as inline blame after save (`You` / `Not Committed Yet`), with a link to open the Diff view.
+- Show blame on the left side of VS Code's built-in Git Diff view (including special refs such as `~`).
+- Support multi-level remote URLs (e.g. GitLab `group/subgroup/repo`) for “View on …” links.
+- Open commit Diff views using the historical file path after renames, so blame-linked diffs are no longer empty.
+
 ## 1.1.2 - 2026-05-01
 ### Fixes
 - Support stash actions from workspace contexts.
