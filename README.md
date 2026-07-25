@@ -24,6 +24,11 @@ Full support for viewing and displaying multi-line commit messages.
 
 ![Multi-line Commit Messages](./docs/img/readme-usage-multiline.jpeg)
 
+### Diff View & Jupyter Notebook Support
+Blame works in Diff views on both sides, including rich notebook Diffs for `.ipynb` files—so you can keep jumping through history from either pane.
+
+![Diff View and Jupyter Notebook Support](./docs/img/readme-support-diffview-and-ipynb.png)
+
 ### Smart Stash Feature
 Easily stash staged or unstaged changes with custom messages from the Source Control panel.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.5 - 2026-07-26
+## 1.2.0 - 2026-07-26
 ### Features
 - Show inline blame for the focused Jupyter notebook cell, mapped by stable cell `id` (not index) so rearranging cells does not mix annotations.
 - Open commit Diff via built-in `git:` URIs (same as the SCM panel), so notebooks and media get the rich Diff view instead of raw JSON/text.
