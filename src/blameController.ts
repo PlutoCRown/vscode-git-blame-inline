@@ -1,11 +1,19 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { readFile } from 'fs/promises';
 import { GitService } from './gitService';
 import { DecorationProvider } from './decorationProvider';
 import { BlameHoverProvider } from './hoverProvider';
 import { BlameInfo, RemoteInfo } from './types';
 import { t } from './i18n';
 import { decodeDiffDocUri, DiffDocProvider } from './diffDocProvider';
+import {
+  NOTEBOOK_CELL_SCHEME,
+  buildNotebookCellSourceLineMaps,
+  findNotebookCellRef,
+  mapFileBlameToCellBlame,
+  notebookRelativePath
+} from './notebookUtils';
 import { isLikelyBinaryDocument, parseGitUriQuery } from './uriUtils';
 
 /**
@@ -65,7 +73,12 @@ export class BlameController {
 
     this.disposables.push(
       vscode.languages.registerHoverProvider(
-        [{ scheme: 'file' }, { scheme: DiffDocProvider.scheme }, { scheme: 'git' }],
+        [
+          { scheme: 'file' },
+          { scheme: DiffDocProvider.scheme },
+          { scheme: 'git' },
+          { scheme: NOTEBOOK_CELL_SCHEME }
+        ],
         hoverProvider
       )
     );
@@ -84,7 +97,10 @@ export class BlameController {
     this.disposables.push(
       vscode.window.onDidChangeVisibleTextEditors(editors => {
         const hasDiff = editors.some(
-          e => e.document.uri.scheme === 'git' || e.document.uri.scheme === DiffDocProvider.scheme
+          e =>
+            e.document.uri.scheme === 'git' ||
+            e.document.uri.scheme === DiffDocProvider.scheme ||
+            e.document.uri.scheme === NOTEBOOK_CELL_SCHEME
         );
         if (!hasDiff) {
           return;
@@ -101,6 +117,24 @@ export class BlameController {
       })
     );
 
+    // Notebook Diff / 编辑器切 cell 时刷新聚焦 cell 的 blame
+    this.disposables.push(
+      vscode.window.onDidChangeNotebookEditorSelection(event => {
+        if (!this.enabled) {
+          return;
+        }
+        this.updateActiveNotebookCellBlame(event.notebookEditor);
+      })
+    );
+    this.disposables.push(
+      vscode.window.onDidChangeActiveNotebookEditor(editor => {
+        if (!this.enabled || !editor) {
+          return;
+        }
+        this.updateActiveNotebookCellBlame(editor);
+      })
+    );
+
     // 监听光标位置变化：优先使用已缓存的 blame 信息同步更新，保证多光标移动时装饰实时刷新
     this.disposables.push(
       vscode.window.onDidChangeTextEditorSelection(event => {
@@ -109,7 +143,9 @@ export class BlameController {
         }
 
         const hasGitDiff = vscode.window.visibleTextEditors.some(
-          e => e.document.uri.scheme === 'git'
+          e =>
+            e.document.uri.scheme === 'git' ||
+            e.document.uri.scheme === NOTEBOOK_CELL_SCHEME
         );
         const isDiff = event.textEditor.document.uri.scheme === DiffDocProvider.scheme;
         const editors = isDiff || hasGitDiff
@@ -142,6 +178,27 @@ export class BlameController {
           this.clearDocumentCaches(document.uri);
           this.updateBlame(editor);
         }
+      })
+    );
+
+    // Notebook 保存后按 cell id 重新映射 blame
+    this.disposables.push(
+      vscode.workspace.onDidSaveNotebookDocument(notebook => {
+        this.clearDocumentCaches(notebook.uri);
+        this.refreshNotebookEditors(notebook.uri.fsPath);
+      })
+    );
+
+    // Notebook 结构 / 内容变更：清缓存并延迟刷新可见 cell
+    this.disposables.push(
+      vscode.workspace.onDidChangeNotebookDocument(event => {
+        this.clearDocumentCaches(event.notebook.uri);
+        if (this.updateTimeout) {
+          clearTimeout(this.updateTimeout);
+        }
+        this.updateTimeout = setTimeout(() => {
+          this.refreshNotebookEditors(event.notebook.uri.fsPath);
+        }, 200);
       })
     );
 
@@ -181,7 +238,9 @@ export class BlameController {
    */
   private updateVisibleDiffEditors(editor: vscode.TextEditor): void {
     const hasGitDiff = vscode.window.visibleTextEditors.some(
-      e => e.document.uri.scheme === 'git'
+      e =>
+        e.document.uri.scheme === 'git' ||
+        e.document.uri.scheme === NOTEBOOK_CELL_SCHEME
     );
     if (editor.document.uri.scheme === DiffDocProvider.scheme || hasGitDiff) {
       vscode.window.visibleTextEditors.forEach(e => this.updateBlame(e));
@@ -196,6 +255,11 @@ export class BlameController {
     }
 
     const document = editor.document;
+
+    if (document.uri.scheme === NOTEBOOK_CELL_SCHEME) {
+      await this.updateNotebookCellBlame(editor);
+      return;
+    }
 
     // 二进制 / 媒体文件不做 blame，也不去 git show 整文件，避免干扰内置 Diff 预览
     if (isLikelyBinaryDocument(document)) {
@@ -247,8 +311,206 @@ export class BlameController {
     }
   }
 
+  /**
+   * 仅对当前聚焦的 notebook cell 显示 blame（按 cell id 映射到 .ipynb 文件行）
+   * 支持工作区 file: 与 Diff/SCM 中的 git: notebook（左右两侧均可连续跳转）
+   */
+  private async updateNotebookCellBlame(editor: vscode.TextEditor): Promise<void> {
+    const document = editor.document;
+    const ref = findNotebookCellRef(document);
+    if (!ref) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
+
+    const repoPath = await this.gitService.getRepositoryRoot(ref.notebookFsPath);
+    if (!repoPath) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
+
+    const filePath = notebookRelativePath(repoPath, ref.notebookFsPath);
+    const target = await this.resolveNotebookBlameTarget(ref.notebook.uri, repoPath, filePath);
+    if (!target) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
+
+    const cellCacheKey = `${repoPath}::${filePath}::${target.fileCacheKeySuffix}::cell:${ref.cellId}::v${document.version}`;
+    const fileCacheKey = `${repoPath}::${filePath}::${target.fileCacheKeySuffix}`;
+
+    this.documentInfoCache.set(document.uri.toString(), {
+      cacheKey: cellCacheKey,
+      repoPath,
+      filePath
+    });
+
+    try {
+      const lineMaps = buildNotebookCellSourceLineMaps(target.raw);
+      const sourceFileLines = lineMaps.get(ref.cellId);
+      if (!sourceFileLines || sourceFileLines.length === 0) {
+        this.decorationProvider.clearDecorations(editor);
+        return;
+      }
+
+      const fileBlame = await this.gitService.getBlameForRepoFile(
+        repoPath,
+        filePath,
+        target.commit,
+        fileCacheKey,
+        target.contents
+      );
+
+      await this.ensureRemoteCached(repoPath);
+
+      if (!fileBlame) {
+        this.decorationProvider.clearDecorations(editor);
+        return;
+      }
+
+      const cellBlame = mapFileBlameToCellBlame(fileBlame, sourceFileLines);
+
+      if (target.isWorkingTree) {
+        const isDirty = target.isDirty || ref.notebook.isDirty || document.isDirty;
+        if (!isDirty) {
+          await this.applyUncommittedTimestampsForPath(ref.notebookFsPath, cellBlame);
+        } else {
+          for (const [line, info] of [...cellBlame.entries()]) {
+            if (info.isUncommitted) {
+              cellBlame.delete(line);
+            }
+          }
+        }
+      }
+
+      this.trackDocumentCacheKey(ref.notebookFsPath, fileCacheKey);
+      this.trackDocumentCacheKey(ref.notebookFsPath, cellCacheKey);
+      this.blameCache.set(cellCacheKey, cellBlame);
+      this.decorationProvider.updateDecorations(editor, cellBlame);
+    } catch (error) {
+      console.error('Failed to update notebook cell blame:', error);
+    }
+  }
+
+  private async resolveNotebookBlameTarget(
+    notebookUri: vscode.Uri,
+    repoPath: string,
+    filePath: string
+  ): Promise<{
+    raw: string;
+    commit?: string;
+    contents?: string;
+    fileCacheKeySuffix: string;
+    isWorkingTree: boolean;
+    isDirty: boolean;
+  } | null> {
+    if (notebookUri.scheme === 'file') {
+      let raw: string;
+      try {
+        raw = await readFile(notebookUri.fsPath, 'utf8');
+      } catch {
+        return null;
+      }
+      const notebook = vscode.workspace.notebookDocuments.find(
+        n => n.uri.toString() === notebookUri.toString()
+      );
+      return {
+        raw,
+        fileCacheKeySuffix: 'working-tree',
+        isWorkingTree: true,
+        isDirty: notebook?.isDirty ?? false
+      };
+    }
+
+    if (notebookUri.scheme === 'git') {
+      const { ref: queryRef } = parseGitUriQuery(notebookUri);
+      const resolved = await this.gitService.resolveGitUriBlameTarget(
+        repoPath,
+        filePath,
+        queryRef
+      );
+      if (!resolved) {
+        return null;
+      }
+
+      if (resolved.contents !== undefined) {
+        return {
+          raw: resolved.contents,
+          contents: resolved.contents,
+          fileCacheKeySuffix: resolved.cacheKeySuffix,
+          isWorkingTree: false,
+          isDirty: false
+        };
+      }
+
+      const commit = resolved.commit ?? 'HEAD';
+      const raw = await this.gitService.getFileContentsAtCommit(repoPath, filePath, commit);
+      if (raw === null) {
+        return null;
+      }
+      return {
+        raw,
+        commit,
+        fileCacheKeySuffix: resolved.cacheKeySuffix,
+        isWorkingTree: false,
+        isDirty: false
+      };
+    }
+
+    return null;
+  }
+
+  private updateActiveNotebookCellBlame(notebookEditor: vscode.NotebookEditor): void {
+    const selection = notebookEditor.selections[0];
+    if (!selection) {
+      return;
+    }
+    const cell = notebookEditor.notebook.cellAt(selection.start);
+    const cellUri = cell.document.uri.toString();
+    const editor =
+      vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === cellUri) ??
+      (vscode.window.activeTextEditor?.document.uri.toString() === cellUri
+        ? vscode.window.activeTextEditor
+        : undefined);
+    if (editor) {
+      void this.updateBlame(editor);
+    }
+  }
+
+  private refreshNotebookEditors(notebookFsPath: string): void {
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (editor.document.uri.scheme !== NOTEBOOK_CELL_SCHEME) {
+        continue;
+      }
+      const ref = findNotebookCellRef(editor.document);
+      if (ref?.notebookFsPath === notebookFsPath) {
+        void this.updateBlame(editor);
+      }
+    }
+  }
+
+  private async ensureRemoteCached(repoPath: string): Promise<void> {
+    if (this.remoteCache.has(repoPath)) {
+      return;
+    }
+    const remoteUrl = await this.gitService.getRemoteUrlForRepo(repoPath);
+    if (remoteUrl) {
+      this.remoteCache.set(repoPath, this.gitService.parseRemoteUrl(remoteUrl));
+    } else {
+      this.remoteCache.set(repoPath, null);
+    }
+  }
+
   private async applyUncommittedTimestamps(
     document: vscode.TextDocument,
+    blameMap: Map<number, BlameInfo>
+  ): Promise<void> {
+    const fsPath = document.uri.scheme === 'file' ? document.uri.fsPath : undefined;
+    await this.applyUncommittedTimestampsForPath(fsPath, blameMap);
+  }
+
+  private async applyUncommittedTimestampsForPath(
+    fsPath: string | undefined,
     blameMap: Map<number, BlameInfo>
   ): Promise<void> {
     const hasUncommitted = [...blameMap.values()].some(info => info.isUncommitted);
@@ -258,9 +520,8 @@ export class BlameController {
 
     // 仅在已保存文件上展示未提交行，时间取文件 mtime
     const timestamp =
-      (document.uri.scheme === 'file'
-        ? await this.gitService.getFileMtimeSeconds(document.uri.fsPath)
-        : null) ?? Math.floor(Date.now() / 1000);
+      (fsPath ? await this.gitService.getFileMtimeSeconds(fsPath) : null) ??
+      Math.floor(Date.now() / 1000);
 
     for (const info of blameMap.values()) {
       if (info.isUncommitted) {

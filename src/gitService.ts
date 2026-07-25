@@ -131,6 +131,30 @@ export class GitService {
     }
   }
 
+  /**
+   * 读取某次提交（或 HEAD）中的文件文本内容
+   */
+  async getFileContentsAtCommit(
+    repoPath: string,
+    filePath: string,
+    commit: string
+  ): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['show', `${commit}:${filePath}`],
+        {
+          cwd: repoPath,
+          maxBuffer: 10 * 1024 * 1024,
+          encoding: 'utf8'
+        }
+      );
+      return stdout;
+    } catch {
+      return null;
+    }
+  }
+
   private async getGitObjectContents(
     repoPath: string,
     filePath: string,

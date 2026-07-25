@@ -7,6 +7,7 @@ import * as path from 'path';
 import { t } from './i18n';
 import { GitService } from './gitService';
 import { findRepositoryForPath, getFilePathFromUri } from './uriUtils';
+import { findNotebookCellRef, NOTEBOOK_CELL_SCHEME } from './notebookUtils';
 import { UNCOMMITTED_HASH } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -17,6 +18,7 @@ let diffDocProvider: DiffDocProvider | undefined;
 
 type GitApi = {
   repositories: Array<{ rootUri: vscode.Uri }>;
+  toGitUri(uri: vscode.Uri, ref: string): vscode.Uri;
 };
 
 type GitBlameStashChoice = {
@@ -111,40 +113,12 @@ async function showCommitDiff(
       return;
     }
 
-    let cwd: string;
-    let relativeFilePath: string;
-    let workingTreeUri: vscode.Uri;
-
-    if (editor.document.uri.scheme === DiffDocProvider.scheme) {
-      const data = decodeDiffDocUri(editor.document.uri);
-      if (!data.exists) {
-        vscode.window.showErrorMessage(t.error.notInWorkspace);
-        return;
-      }
-      cwd = data.repo;
-      relativeFilePath = data.filePath;
-      workingTreeUri = vscode.Uri.file(path.join(cwd, relativeFilePath));
-    } else if (editor.document.uri.scheme === 'git') {
-      const fsPath = getFilePathFromUri(editor.document.uri) ?? editor.document.uri.fsPath;
-      const repoPath = await gitService.getRepositoryRoot(fsPath);
-      if (!repoPath) {
-        vscode.window.showErrorMessage(t.error.notInWorkspace);
-        return;
-      }
-      cwd = repoPath;
-      relativeFilePath = path.relative(cwd, fsPath).split(path.sep).join('/');
-      workingTreeUri = vscode.Uri.file(fsPath);
-    } else {
-      const repoPath = await gitService.getRepositoryRoot(editor.document.uri.fsPath);
-      if (!repoPath) {
-        vscode.window.showErrorMessage(t.error.notInWorkspace);
-        return;
-      }
-      cwd = repoPath;
-      const filePath = editor.document.uri.fsPath;
-      relativeFilePath = path.relative(cwd, filePath).split(path.sep).join('/');
-      workingTreeUri = editor.document.uri;
+    const resolved = await resolveDiffContext(editor);
+    if (!resolved) {
+      vscode.window.showErrorMessage(t.error.notInWorkspace);
+      return;
     }
+    const { cwd, relativeFilePath, workingTreeUri } = resolved;
 
     // 未提交改动：对比 HEAD ↔ 工作区文件
     if (commitHash === UNCOMMITTED_HASH) {
@@ -181,8 +155,13 @@ async function showCommitDiff(
     const shortParentHash = parentHash.substring(0, 8);
     const titleName = path.basename(rightPath);
 
-    const leftUri = encodeDiffDocUri(cwd, leftPath, parentHash, leftExists);
-    const rightUri = encodeDiffDocUri(cwd, rightPath, commitHash, rightExists);
+    // 优先用内置 git: URI（与 SCM「打开更改」相同），notebook / 媒体可走富 Diff
+    const leftUri = leftExists
+      ? await toGitUri(vscode.Uri.file(path.join(cwd, leftPath)), parentHash)
+      : encodeDiffDocUri(cwd, leftPath, parentHash, false);
+    const rightUri = rightExists
+      ? await toGitUri(vscode.Uri.file(path.join(cwd, rightPath)), commitHash)
+      : encodeDiffDocUri(cwd, rightPath, commitHash, false);
 
     await vscode.commands.executeCommand(
       'vscode.diff',
@@ -210,6 +189,84 @@ async function pathExistsInCommit(
   } catch {
     return false;
   }
+}
+
+/**
+ * 从当前编辑器解析仓库路径与工作区文件 URI（含 notebook cell / git: Diff）
+ */
+async function resolveDiffContext(editor: vscode.TextEditor): Promise<{
+  cwd: string;
+  relativeFilePath: string;
+  workingTreeUri: vscode.Uri;
+} | null> {
+  const uri = editor.document.uri;
+
+  if (uri.scheme === DiffDocProvider.scheme) {
+    const data = decodeDiffDocUri(uri);
+    if (!data.exists) {
+      return null;
+    }
+    return {
+      cwd: data.repo,
+      relativeFilePath: data.filePath,
+      workingTreeUri: vscode.Uri.file(path.join(data.repo, data.filePath))
+    };
+  }
+
+  if (uri.scheme === NOTEBOOK_CELL_SCHEME) {
+    const cellRef = findNotebookCellRef(editor.document);
+    if (!cellRef) {
+      return null;
+    }
+    const repoPath = await gitService.getRepositoryRoot(cellRef.notebookFsPath);
+    if (!repoPath) {
+      return null;
+    }
+    return {
+      cwd: repoPath,
+      relativeFilePath: path.relative(repoPath, cellRef.notebookFsPath).split(path.sep).join('/'),
+      workingTreeUri: vscode.Uri.file(cellRef.notebookFsPath)
+    };
+  }
+
+  if (uri.scheme === 'git') {
+    const fsPath = getFilePathFromUri(uri) ?? uri.fsPath;
+    const repoPath = await gitService.getRepositoryRoot(fsPath);
+    if (!repoPath) {
+      return null;
+    }
+    return {
+      cwd: repoPath,
+      relativeFilePath: path.relative(repoPath, fsPath).split(path.sep).join('/'),
+      workingTreeUri: vscode.Uri.file(fsPath)
+    };
+  }
+
+  if (uri.scheme === 'file') {
+    const repoPath = await gitService.getRepositoryRoot(uri.fsPath);
+    if (!repoPath) {
+      return null;
+    }
+    return {
+      cwd: repoPath,
+      relativeFilePath: path.relative(repoPath, uri.fsPath).split(path.sep).join('/'),
+      workingTreeUri: uri
+    };
+  }
+
+  return null;
+}
+
+/** 构造与内置 Git 扩展一致的 git: URI，供 vscode.diff 打开富 Diff */
+async function toGitUri(fileUri: vscode.Uri, ref: string): Promise<vscode.Uri> {
+  const git = await getGitApi();
+  if (git?.toGitUri) {
+    return git.toGitUri(fileUri, ref);
+  }
+  return fileUri.with({
+    scheme: 'git',
+    query: JSON.stringify({ path: fileUri.fsPath, ref })
+  });
 }
 
 async function showUncommittedDiff(
