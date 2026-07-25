@@ -6,7 +6,7 @@ import { BlameHoverProvider } from './hoverProvider';
 import { BlameInfo, RemoteInfo } from './types';
 import { t } from './i18n';
 import { decodeDiffDocUri, DiffDocProvider } from './diffDocProvider';
-import { parseGitUriQuery } from './uriUtils';
+import { isLikelyBinaryDocument, parseGitUriQuery } from './uriUtils';
 
 /**
  * Blame 控制器：协调各组件工作
@@ -80,14 +80,24 @@ export class BlameController {
     );
 
     // Diff 两侧进入可见列表时再刷一次（SCM 打开时左侧可能尚未成为 active）
+    // 稍延迟，避免与内置 Git 读取 blob / 二进制预览抢同一时机
     this.disposables.push(
       vscode.window.onDidChangeVisibleTextEditors(editors => {
         const hasDiff = editors.some(
           e => e.document.uri.scheme === 'git' || e.document.uri.scheme === DiffDocProvider.scheme
         );
-        if (hasDiff) {
-          editors.forEach(e => this.updateBlame(e));
+        if (!hasDiff) {
+          return;
         }
+
+        if (this.updateTimeout) {
+          clearTimeout(this.updateTimeout);
+        }
+        this.updateTimeout = setTimeout(() => {
+          for (const editor of vscode.window.visibleTextEditors) {
+            this.updateBlame(editor);
+          }
+        }, 250);
       })
     );
 
@@ -186,6 +196,12 @@ export class BlameController {
     }
 
     const document = editor.document;
+
+    // 二进制 / 媒体文件不做 blame，也不去 git show 整文件，避免干扰内置 Diff 预览
+    if (isLikelyBinaryDocument(document)) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
 
     const info = await this.getDocumentInfo(document);
     if (!info) {
@@ -305,6 +321,12 @@ export class BlameController {
     if (document.uri.scheme === 'git') {
       const { path: queryPath, ref: queryRef } = parseGitUriQuery(document.uri);
       const fsPath = queryPath ?? document.uri.fsPath;
+
+      // 二进制 git: 文档：不要 resolve（会 git show 整 blob）
+      if (isLikelyBinaryDocument(document)) {
+        return null;
+      }
+
       const repoPath = await this.gitService.getRepositoryRoot(fsPath);
       if (!repoPath) {
         return null;

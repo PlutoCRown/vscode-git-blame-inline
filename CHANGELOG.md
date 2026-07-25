@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4 - 2026-07-25
+### Fixes
+- Skip blame on binary/media files in built-in Git Diff views, avoiding intermittent one-side load failures caused by competing `git show`/blame with VS Code’s media preview.
+
 ## 1.1.3 - 2026-07-25
 ### Features
 - Show uncommitted changes as inline blame after save (`You` / `Not Committed Yet`), with a link to open the Diff view.

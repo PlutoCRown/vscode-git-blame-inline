@@ -1,6 +1,19 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 
+/** 常见二进制 / 媒体扩展名：对这些文件不做 blame，避免与 VS Code 媒体预览抢读 git blob */
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tif', '.tiff', '.avif',
+  '.pdf',
+  '.zip', '.gz', '.tgz', '.tar', '.7z', '.rar', '.bz2', '.xz',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.mp4', '.m4a', '.wav', '.flac', '.ogg', '.webm', '.mov', '.avi', '.mkv',
+  '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.wasm',
+  '.psd', '.ai', '.sketch', '.fig', '.xd',
+  '.pyc', '.pyo', '.class', '.o', '.a', '.lib', '.jar',
+  '.sqlite', '.db', '.pack'
+]);
+
 export function getFilePathFromUri(uri: vscode.Uri | undefined): string | undefined {
   if (!uri) {
     return undefined;
@@ -32,6 +45,33 @@ export function parseGitUriQuery(uri: vscode.Uri): { path?: string; ref?: string
   } catch {
     return {};
   }
+}
+
+/**
+ * 判断路径是否像二进制文件（用于跳过 blame，避免干扰内置 Git 的二进制 Diff 预览）
+ */
+export function isLikelyBinaryPath(filePath: string | undefined): boolean {
+  if (!filePath) {
+    return false;
+  }
+
+  // VS Code Git 有时会给 git: URI 加上 .git 后缀
+  const normalized = filePath.replace(/\.git$/i, '');
+  const ext = path.extname(normalized).toLowerCase();
+  return BINARY_EXTENSIONS.has(ext);
+}
+
+export function isLikelyBinaryDocument(document: vscode.TextDocument): boolean {
+  if (document.languageId === 'binary') {
+    return true;
+  }
+
+  const candidatePath =
+    getFilePathFromUri(document.uri) ??
+    document.uri.fsPath ??
+    document.uri.path;
+
+  return isLikelyBinaryPath(candidatePath);
 }
 
 export function isSameOrParentPath(filePath: string, parentPath: string): boolean {
