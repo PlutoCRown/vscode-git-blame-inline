@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
-import { BlameInfo } from './types';
+import { BlameInfo, RemoteInfo } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -299,35 +299,34 @@ export class GitService {
 
   /**
    * 解析远程仓库 URL 为 Web URL
+   * 支持 GitHub 的 owner/repo，以及 GitLab 的多级 namespace（group/subgroup/repo）
    */
-  parseRemoteUrl(remoteUrl: string): { baseUrl: string; owner: string; repo: string; host: string } | null {
-    // 支持 HTTPS 和 SSH 格式
-    // HTTPS: https://github.com/owner/repo.git
-    // SSH: git@github.com:owner/repo.git
-
-    const httpsMatch = remoteUrl.match(/https?:\/\/([^\/]+)\/([^\/]+)\/([^\/\.]+)(\.git)?/);
-    if (httpsMatch) {
-      const [, hostName, owner, repo] = httpsMatch;
-      return {
-        baseUrl: `https://${hostName}`,
-        owner,
-        repo,
-        host: this.detectHostType(hostName)
-      };
+  parseRemoteUrl(remoteUrl: string): RemoteInfo | null {
+    // HTTPS: https://host[:port]/group/subgroup/repo.git
+    // SSH:   git@host:group/subgroup/repo.git
+    const httpsMatch = remoteUrl.match(/^https?:\/\/([^/:]+)(?::\d+)?\/(.+?)$/i);
+    const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)$/i);
+    const match = httpsMatch ?? sshMatch;
+    if (!match) {
+      return null;
     }
 
-    const sshMatch = remoteUrl.match(/git@([^:]+):([^\/]+)\/([^\/\.]+)(\.git)?/);
-    if (sshMatch) {
-      const [, hostName, owner, repo] = sshMatch;
-      return {
-        baseUrl: `https://${hostName}`,
-        owner,
-        repo,
-        host: this.detectHostType(hostName)
-      };
+    const [, hostName, rawPath] = match;
+    const projectPath = rawPath
+      .replace(/\.git$/i, '')
+      .replace(/\/+$/, '')
+      .replace(/^\/+/, '');
+
+    // 至少需要两级路径（namespace/repo）；GitLab 可为更多级
+    if (!projectPath || !projectPath.includes('/')) {
+      return null;
     }
 
-    return null;
+    return {
+      baseUrl: `https://${hostName}`,
+      projectPath,
+      host: this.detectHostType(hostName)
+    };
   }
 
   /**

@@ -21,7 +21,10 @@ export interface BlameInfo {
  */
 export interface RemoteInfo {
   baseUrl: string;
-  owner: string;
-  repo: string;
+  /**
+   * 完整项目路径（可含 GitLab 多级 namespace）
+   * 例如：owner/repo、team/repo、team/folder/repo
+   */
+  projectPath: string;
   host: string;
 }

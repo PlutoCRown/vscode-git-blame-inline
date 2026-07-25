@@ -2,29 +2,40 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "build",
+            "type": "shell",
+            "command": "bun run build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "close": true
+            }
+        },
+        {
             "label": "watch",
             "type": "shell",
             "command": "bun run dev",
             "isBackground": true,
             "problemMatcher": {
-                "owner": "custom",
+                "owner": "bun",
                 "pattern": {
-                    "regexp": "^([^\\s].*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
-                    "file": 1,
-                    "line": 2,
-                    "column": 3,
-                    "severity": 4,
-                    "message": 5
+                    "regexp": "^$"
                 },
                 "background": {
                     "activeOnStart": true,
-                    "beginsPattern": ".*",
-                    "endsPattern": ".*"
+                    "beginsPattern": "___bun_watch_begin_never___",
+                    "endsPattern": "Bundled \\d+ modules"
                 }
             },
-            "group": {
-                "kind": "build",
-                "isDefault": true
+            "group": "build",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
             }
         }
     ]
