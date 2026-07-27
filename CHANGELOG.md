@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1 - 2026-07-27
+### Fixes
+- **Prevent duplicate `git blame` process explosion on large files.** Concurrent calls for the same file (e.g. from rapid cursor movement) now share a single in-flight request instead of spawning one `git blame` process per call.
+- **Abort stale blame requests on cache clear.** When a document changes or is saved, pending `git blame` processes for the stale cache key are now aborted via `AbortController` instead of running to completion in the background.
+- **Debounce cursor-triggered blame updates.** `onDidChangeTextEditorSelection` now batches cache-miss updates with a 300ms debounce instead of immediately spawning `git blame` on every keystroke/cursor move.
+
+### Features
+- **Ranged blame for large files.** Files exceeding `gitBlameInline.rangeBlameThreshold` (default 500 lines) now use `git blame -L` to blame only the lines around the cursor (±`rangeBlamePadding`, default 100) instead of the entire file. This makes blame usable on lockfiles and generated code without multi-minute waits. The cursor-following range is cached per range and automatically re-queried when the cursor moves outside the cached window.
+- New settings: `gitBlameInline.rangeBlameThreshold` (default 500, 0 = always full-file), `gitBlameInline.rangeBlamePadding` (default 100).
+
 ## 1.2.0 - 2026-07-26
 ### Features
 - Show inline blame for the focused Jupyter notebook cell, mapped by stable cell `id` (not index) so rearranging cells does not mix annotations.

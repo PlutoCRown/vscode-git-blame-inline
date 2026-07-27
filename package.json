@@ -2,7 +2,7 @@
     "name": "git-blame-lite",
     "displayName": "%displayName%",
     "description": "%description%",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "publisher": "PlutoCRown",
     "author": "PlutoCRown",
     "license": "MIT",
@@ -83,6 +83,16 @@
                     "type": "boolean",
                     "default": true,
                     "description": "%config.showStashButton%"
+                },
+                "gitBlameInline.rangeBlameThreshold": {
+                    "type": "number",
+                    "default": 500,
+                    "description": "%config.rangeBlameThreshold%"
+                },
+                "gitBlameInline.rangeBlamePadding": {
+                    "type": "number",
+                    "default": 100,
+                    "description": "%config.rangeBlamePadding%"
                 }
             }
         }

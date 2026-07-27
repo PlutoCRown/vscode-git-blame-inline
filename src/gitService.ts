@@ -15,6 +15,8 @@ export class GitService {
   private cacheTimestamps = new Map<string, number>();
   private repoRootCache = new Map<string, string | null>();
   private readonly CACHE_TTL = 60000; // 缓存 60 秒
+  private pendingRequests = new Map<string, Promise<Map<number, BlameInfo> | null>>();
+  private pendingControllers = new Map<string, AbortController>();
 
   /**
    * 将 VS Code 内置 Git 的 git: URI ref 解析为可 blame 的目标。
@@ -67,13 +69,20 @@ export class GitService {
 
   /**
    * 获取指定仓库/文件/提交的 blame 信息
+   *
+   * 对同一 cacheKey 的并发调用会复用同一个 in-flight Promise，
+   * 避免 large file 上重复 spawn `git blame` 进程（每次可能需数分钟）。
+   *
+   * @param lineRange 可选行范围（1-based），传入时使用 `-L start,end` 只 blame 局部行，
+   *                  避免对大文件做全量 blame。
    */
   async getBlameForRepoFile(
     repoPath: string,
     filePath: string,
     commit?: string,
     cacheKey?: string,
-    contents?: string
+    contents?: string,
+    lineRange?: { start: number; end: number }
   ): Promise<Map<number, BlameInfo> | null> {
     const key = cacheKey ?? `${repoPath}::${filePath}::${commit ?? 'working-tree'}`;
 
@@ -82,28 +91,56 @@ export class GitService {
       return cached;
     }
 
-    try {
-      const args = ['blame', '--line-porcelain'];
-      if (commit) {
-        args.push(commit);
-      }
-      if (contents !== undefined) {
-        args.push('--contents', '-');
-      }
-      args.push('--', filePath);
-
-      const { stdout } = await this.execGit(args, repoPath, contents);
-
-      const blameMap = this.parseBlameOutput(stdout);
-
-      this.cache.set(key, blameMap);
-      this.cacheTimestamps.set(key, Date.now());
-
-      return blameMap;
-    } catch (error) {
-      console.error('Git blame failed:', error);
-      return null;
+    const pending = this.pendingRequests.get(key);
+    if (pending) {
+      return pending;
     }
+
+    const controller = new AbortController();
+    this.pendingControllers.set(key, controller);
+
+    const promise = (async (): Promise<Map<number, BlameInfo> | null> => {
+      try {
+        const args = ['blame', '--line-porcelain'];
+        if (lineRange) {
+          args.push(`-L${lineRange.start},${lineRange.end}`);
+        }
+        if (commit) {
+          args.push(commit);
+        }
+        if (contents !== undefined) {
+          args.push('--contents', '-');
+        }
+        args.push('--', filePath);
+
+        const { stdout } = await this.execGit(args, repoPath, contents, controller.signal);
+
+        const blameMap = this.parseBlameOutput(stdout);
+
+        this.cache.set(key, blameMap);
+        this.cacheTimestamps.set(key, Date.now());
+
+        return blameMap;
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Git blame failed:', error);
+        }
+        return null;
+      }
+    })();
+
+    this.pendingRequests.set(key, promise);
+
+    promise.finally(() => {
+      if (this.pendingRequests.get(key) === promise) {
+        this.pendingRequests.delete(key);
+      }
+      if (this.pendingControllers.get(key) === controller) {
+        this.pendingControllers.delete(key);
+      }
+    });
+
+    return promise;
   }
 
   /**
@@ -240,12 +277,14 @@ export class GitService {
   private execGit(
     args: string[],
     cwd: string,
-    input?: string
+    input?: string,
+    signal?: AbortSignal
   ): Promise<{ stdout: string; stderr: string }> {
     if (input === undefined) {
       return execFileAsync('git', args, {
         cwd,
-        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+        signal
       });
     }
 
@@ -255,7 +294,8 @@ export class GitService {
         args,
         {
           cwd,
-          maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+          signal
         },
         (error: Error | null, stdout: string, stderr: string) => {
           if (error) {
@@ -286,9 +326,15 @@ export class GitService {
   }
 
   /**
-   * 清除指定文件的缓存
+   * 清除指定文件的缓存，并中止进行中的 blame 请求
    */
   clearCache(filePath: string): void {
+    const controller = this.pendingControllers.get(filePath);
+    if (controller) {
+      controller.abort();
+    }
+    this.pendingRequests.delete(filePath);
+    this.pendingControllers.delete(filePath);
     this.cache.delete(filePath);
     this.cacheTimestamps.delete(filePath);
   }
@@ -340,9 +386,14 @@ export class GitService {
   }
 
   /**
-   * 清除所有缓存
+   * 清除所有缓存，并中止所有进行中的 blame 请求
    */
   clearAllCache(): void {
+    for (const controller of this.pendingControllers.values()) {
+      controller.abort();
+    }
+    this.pendingControllers.clear();
+    this.pendingRequests.clear();
     this.cache.clear();
     this.cacheTimestamps.clear();
   }

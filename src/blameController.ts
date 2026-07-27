@@ -30,11 +30,16 @@ export class BlameController {
     filePath: string;
     commit?: string;
     contents?: string;
+    isRangeMode?: boolean;
   }>();
   private documentCacheKeys = new Map<string, Set<string>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
+  private rangeBlameThreshold = 500;
+  private rangeBlamePadding = 100;
   private updateTimeout: NodeJS.Timeout | undefined;
+  private selectionUpdateTimeout: NodeJS.Timeout | undefined;
+  private pendingSelectionEditors = new Set<vscode.TextEditor>();
 
   // 存储当前光标位置的 commit 信息，供命令使用
   static currentCommitHash: string | undefined;
@@ -136,6 +141,8 @@ export class BlameController {
     );
 
     // 监听光标位置变化：优先使用已缓存的 blame 信息同步更新，保证多光标移动时装饰实时刷新
+    // 缓存未命中时不立即 spawn git blame，而是防抖 300ms 后批量执行，
+    // 避免大文件上光标快速移动时堆积数十个 git 进程
     this.disposables.push(
       vscode.window.onDidChangeTextEditorSelection(event => {
         if (!this.enabled) {
@@ -154,8 +161,21 @@ export class BlameController {
 
         for (const editor of editors) {
           if (!this.updateDecorationsFromCachedBlame(editor)) {
-            this.updateBlame(editor);
+            this.pendingSelectionEditors.add(editor);
           }
+        }
+
+        if (this.pendingSelectionEditors.size > 0) {
+          if (this.selectionUpdateTimeout) {
+            clearTimeout(this.selectionUpdateTimeout);
+          }
+          this.selectionUpdateTimeout = setTimeout(() => {
+            for (const editor of this.pendingSelectionEditors) {
+              this.updateBlame(editor);
+            }
+            this.pendingSelectionEditors.clear();
+            this.selectionUpdateTimeout = undefined;
+          }, 300);
         }
       })
     );
@@ -205,10 +225,20 @@ export class BlameController {
     // 读取配置
     const config = vscode.workspace.getConfiguration('gitBlameInline');
     this.enabled = config.get('enabled', true);
+    this.rangeBlameThreshold = config.get('rangeBlameThreshold', 500);
+    this.rangeBlamePadding = config.get('rangeBlamePadding', 100);
 
     // 监听配置变化
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('gitBlameInline.rangeBlameThreshold')) {
+          const config = vscode.workspace.getConfiguration('gitBlameInline');
+          this.rangeBlameThreshold = config.get('rangeBlameThreshold', 500);
+        }
+        if (event.affectsConfiguration('gitBlameInline.rangeBlamePadding')) {
+          const config = vscode.workspace.getConfiguration('gitBlameInline');
+          this.rangeBlamePadding = config.get('rangeBlamePadding', 100);
+        }
         if (event.affectsConfiguration('gitBlameInline.enabled')) {
           const config = vscode.workspace.getConfiguration('gitBlameInline');
           this.enabled = config.get('enabled', true);
@@ -272,7 +302,22 @@ export class BlameController {
       return;
     }
 
-    this.documentInfoCache.set(document.uri.toString(), info);
+    // 大文件（如 lockfile）使用行范围 blame，只查光标附近 ±padding 行，避免全量 blame
+    const useRangeMode = document.lineCount > this.rangeBlameThreshold;
+    info.isRangeMode = useRangeMode;
+
+    let cacheKey = info.cacheKey;
+    let lineRange: { start: number; end: number } | undefined;
+
+    if (useRangeMode) {
+      const cursorLine = editor.selections[0]?.active.line ?? 0;
+      const startLine = Math.max(1, cursorLine + 1 - this.rangeBlamePadding);
+      const endLine = Math.min(document.lineCount, cursorLine + 1 + this.rangeBlamePadding);
+      lineRange = { start: startLine, end: endLine };
+      cacheKey = `${info.cacheKey}::L${startLine}-${endLine}`;
+    }
+
+    this.documentInfoCache.set(document.uri.toString(), { ...info, cacheKey });
 
     try {
       // dirty 时用编辑器内容对齐行号；未改动的行仍显示已提交 blame
@@ -280,9 +325,10 @@ export class BlameController {
         info.repoPath,
         info.filePath,
         info.commit,
-        info.cacheKey,
+        cacheKey,
         info.contents ??
-        (document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined)
+        (document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined),
+        lineRange
       );
 
       // 获取远程仓库信息（如果还没有缓存）
@@ -300,8 +346,8 @@ export class BlameController {
         if (!document.isDirty) {
           await this.applyUncommittedTimestamps(document, blameMap);
         }
-        this.trackDocumentCacheKey(document.uri.fsPath, info.cacheKey);
-        this.blameCache.set(info.cacheKey, blameMap);
+        this.trackDocumentCacheKey(document.uri.fsPath, cacheKey);
+        this.blameCache.set(cacheKey, blameMap);
         this.decorationProvider.updateDecorations(editor, blameMap);
       } else {
         this.decorationProvider.clearDecorations(editor);
@@ -531,14 +577,23 @@ export class BlameController {
   }
 
   private updateDecorationsFromCachedBlame(editor: vscode.TextEditor): boolean {
-    const key = this.getCacheKey(editor.document);
-    if (!key) {
+    const docInfo = this.documentInfoCache.get(editor.document.uri.toString());
+    if (!docInfo) {
       return false;
     }
 
-    const blameMap = this.blameCache.get(key);
+    const blameMap = this.blameCache.get(docInfo.cacheKey);
     if (!blameMap) {
       return false;
+    }
+
+    // 范围模式下，当前光标可能已移出已缓存的行范围；
+    // 若所有光标行都不在 blameMap 中，返回 false 触发重新查询
+    if (docInfo.isRangeMode) {
+      const hasCurrentLine = editor.selections.some(s => blameMap.has(s.active.line + 1));
+      if (!hasCurrentLine) {
+        return false;
+      }
     }
 
     this.decorationProvider.updateDecorations(editor, blameMap);
@@ -551,6 +606,7 @@ export class BlameController {
     filePath: string;
     commit?: string;
     contents?: string;
+    isRangeMode?: boolean;
   } | null> {
     if (document.uri.scheme === 'file') {
       const repoPath = await this.gitService.getRepositoryRoot(document.uri.fsPath);
@@ -693,6 +749,10 @@ export class BlameController {
     if (this.updateTimeout) {
       clearTimeout(this.updateTimeout);
     }
+    if (this.selectionUpdateTimeout) {
+      clearTimeout(this.selectionUpdateTimeout);
+    }
+    this.pendingSelectionEditors.clear();
     this.disposables.forEach(d => d.dispose());
     this.decorationProvider.dispose();
     this.gitService.clearAllCache();
