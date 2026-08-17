@@ -14,7 +14,19 @@ import {
   mapFileBlameToCellBlame,
   notebookRelativePath
 } from './notebookUtils';
-import { isLikelyBinaryDocument, parseGitUriQuery } from './uriUtils';
+import {
+  GIT_GRAPH_SCHEME,
+  isLikelyBinaryDocument,
+  parseGitGraphDiffUri,
+  parseGitUriQuery
+} from './uriUtils';
+
+function isDiffRelatedScheme(scheme: string): boolean {
+  return scheme === 'git' ||
+    scheme === DiffDocProvider.scheme ||
+    scheme === GIT_GRAPH_SCHEME ||
+    scheme === NOTEBOOK_CELL_SCHEME;
+}
 
 /**
  * Blame 控制器：协调各组件工作
@@ -82,6 +94,7 @@ export class BlameController {
           { scheme: 'file' },
           { scheme: DiffDocProvider.scheme },
           { scheme: 'git' },
+          { scheme: GIT_GRAPH_SCHEME },
           { scheme: NOTEBOOK_CELL_SCHEME }
         ],
         hoverProvider
@@ -101,12 +114,7 @@ export class BlameController {
     // 稍延迟，避免与内置 Git 读取 blob / 二进制预览抢同一时机
     this.disposables.push(
       vscode.window.onDidChangeVisibleTextEditors(editors => {
-        const hasDiff = editors.some(
-          e =>
-            e.document.uri.scheme === 'git' ||
-            e.document.uri.scheme === DiffDocProvider.scheme ||
-            e.document.uri.scheme === NOTEBOOK_CELL_SCHEME
-        );
+        const hasDiff = editors.some(e => isDiffRelatedScheme(e.document.uri.scheme));
         if (!hasDiff) {
           return;
         }
@@ -149,13 +157,10 @@ export class BlameController {
           return;
         }
 
-        const hasGitDiff = vscode.window.visibleTextEditors.some(
-          e =>
-            e.document.uri.scheme === 'git' ||
-            e.document.uri.scheme === NOTEBOOK_CELL_SCHEME
+        const hasDiff = vscode.window.visibleTextEditors.some(
+          e => isDiffRelatedScheme(e.document.uri.scheme)
         );
-        const isDiff = event.textEditor.document.uri.scheme === DiffDocProvider.scheme;
-        const editors = isDiff || hasGitDiff
+        const editors = hasDiff
           ? vscode.window.visibleTextEditors
           : [event.textEditor];
 
@@ -267,12 +272,10 @@ export class BlameController {
    * 更新编辑器的 blame 信息
    */
   private updateVisibleDiffEditors(editor: vscode.TextEditor): void {
-    const hasGitDiff = vscode.window.visibleTextEditors.some(
-      e =>
-        e.document.uri.scheme === 'git' ||
-        e.document.uri.scheme === NOTEBOOK_CELL_SCHEME
+    const hasDiff = vscode.window.visibleTextEditors.some(
+      e => isDiffRelatedScheme(e.document.uri.scheme)
     );
-    if (editor.document.uri.scheme === DiffDocProvider.scheme || hasGitDiff) {
+    if (isDiffRelatedScheme(editor.document.uri.scheme) || hasDiff) {
       vscode.window.visibleTextEditors.forEach(e => this.updateBlame(e));
     } else {
       this.updateBlame(editor);
@@ -625,6 +628,19 @@ export class BlameController {
     if (document.uri.scheme === DiffDocProvider.scheme) {
       const data = decodeDiffDocUri(document.uri);
       if (!data.exists) {
+        return null;
+      }
+      return {
+        cacheKey: `${data.repo}::${data.filePath}::${data.commit}`,
+        repoPath: data.repo,
+        filePath: data.filePath,
+        commit: data.commit
+      };
+    }
+
+    if (document.uri.scheme === GIT_GRAPH_SCHEME) {
+      const data = parseGitGraphDiffUri(document.uri);
+      if (!data?.exists) {
         return null;
       }
       return {

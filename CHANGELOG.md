@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 - 2026-08-17
+### Features
+- Show inline blame and hover details on both sides of Diff views opened by the Git Graph extension (`mhutchie.git-graph`).
+
 ## 1.2.1 - 2026-07-27
 ### Fixes
 - **Prevent duplicate `git blame` process explosion on large files.** Concurrent calls for the same file (e.g. from rapid cursor movement) now share a single in-flight request instead of spawning one `git blame` process per call.

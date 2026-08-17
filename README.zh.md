@@ -26,7 +26,7 @@
 ![多行提交信息](./docs/img/readme-usage-multiline.jpeg)
 
 ### Diff 视图与 Jupyter Notebook 支持
-Diff 左右两侧均可显示 blame，并支持 `.ipynb` 的富文本 Notebook Diff，方便从任一侧继续追溯历史。
+Diff 左右两侧均可显示 blame，包括由 [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) 打开的视图；同时支持 `.ipynb` 的富文本 Notebook Diff，方便从任一侧继续追溯历史。
 
 ![Diff 视图与 Jupyter Notebook 支持](./docs/img/readme-support-diffview-and-ipynb.png)
 

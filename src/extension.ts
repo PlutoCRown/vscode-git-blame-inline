@@ -6,7 +6,12 @@ import { promisify } from 'util';
 import * as path from 'path';
 import { t } from './i18n';
 import { GitService } from './gitService';
-import { findRepositoryForPath, getFilePathFromUri } from './uriUtils';
+import {
+  GIT_GRAPH_SCHEME,
+  findRepositoryForPath,
+  getFilePathFromUri,
+  parseGitGraphDiffUri
+} from './uriUtils';
 import { findNotebookCellRef, NOTEBOOK_CELL_SCHEME } from './notebookUtils';
 import { UNCOMMITTED_HASH } from './types';
 
@@ -204,6 +209,18 @@ async function resolveDiffContext(editor: vscode.TextEditor): Promise<{
   if (uri.scheme === DiffDocProvider.scheme) {
     const data = decodeDiffDocUri(uri);
     if (!data.exists) {
+      return null;
+    }
+    return {
+      cwd: data.repo,
+      relativeFilePath: data.filePath,
+      workingTreeUri: vscode.Uri.file(path.join(data.repo, data.filePath))
+    };
+  }
+
+  if (uri.scheme === GIT_GRAPH_SCHEME) {
+    const data = parseGitGraphDiffUri(uri);
+    if (!data?.exists) {
       return null;
     }
     return {

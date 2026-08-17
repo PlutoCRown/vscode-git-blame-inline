@@ -1,6 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 
+/** Git Graph extension's virtual document scheme used in its Diff views. */
+export const GIT_GRAPH_SCHEME = 'git-graph';
+
+export type GitGraphDiffUriData = {
+  filePath: string;
+  commit: string;
+  repo: string;
+  exists: boolean;
+};
+
 /** 常见二进制 / 媒体扩展名：对这些文件不做 blame，避免与 VS Code 媒体预览抢读 git blob */
 const BINARY_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tif', '.tiff', '.avif',
@@ -44,6 +54,35 @@ export function parseGitUriQuery(uri: vscode.Uri): { path?: string; ref?: string
     return JSON.parse(uri.query) as { path?: string; ref?: string };
   } catch {
     return {};
+  }
+}
+
+/**
+ * Decode the virtual document URI produced by mhutchie.git-graph.
+ *
+ * Git Graph encodes `{ repo, filePath, commit, exists }` as base64 JSON in the
+ * query of a `git-graph:` URI. Keep this parser defensive because the scheme is
+ * owned by another extension and malformed URIs should simply be ignored.
+ */
+export function parseGitGraphDiffUri(uri: vscode.Uri): GitGraphDiffUriData | null {
+  if (uri.scheme !== GIT_GRAPH_SCHEME) {
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(Buffer.from(uri.query, 'base64').toString('utf8')) as Partial<GitGraphDiffUriData>;
+    if (
+      typeof data.filePath !== 'string' ||
+      typeof data.commit !== 'string' ||
+      typeof data.repo !== 'string' ||
+      typeof data.exists !== 'boolean'
+    ) {
+      return null;
+    }
+
+    return data as GitGraphDiffUriData;
+  } catch {
+    return null;
   }
 }
 
