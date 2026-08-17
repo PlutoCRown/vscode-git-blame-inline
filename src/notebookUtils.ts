@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 
-export { buildNotebookCellSourceLineMaps } from './notebookSourceMap';
+export {
+  buildNotebookCellSourceLineMaps,
+  buildNotebookCellSourceMaps
+} from './notebookSourceMap';
 
 export const NOTEBOOK_CELL_SCHEME = 'vscode-notebook-cell';
 
@@ -53,12 +56,15 @@ export function getNotebookCellId(cell: vscode.NotebookCell): string | undefined
  */
 export function mapFileBlameToCellBlame<T extends { lineNumber: number }>(
   fileBlame: Map<number, T>,
-  sourceFileLines: number[]
+  sourceFileLines: Array<number | undefined>
 ): Map<number, T> {
   const cellBlame = new Map<number, T>();
 
   for (let i = 0; i < sourceFileLines.length; i++) {
     const fileLine = sourceFileLines[i];
+    if (fileLine === undefined) {
+      continue;
+    }
     const info = fileBlame.get(fileLine);
     if (!info) {
       continue;

@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { buildNotebookCellSourceLineMaps } from '../src/notebookSourceMap';
+import {
+  buildNotebookCellSourceLineMaps,
+  buildNotebookCellSourceMaps
+} from '../src/notebookSourceMap';
 
 function lineOf(raw: string, marker: string): number {
   const offset = raw.indexOf(marker);
@@ -92,6 +95,29 @@ describe('buildNotebookCellSourceLineMaps', () => {
     const maps = buildNotebookCellSourceLineMaps(raw);
 
     expect(maps.get('legacy')).toEqual([1, 1]);
+  });
+
+  test('returns saved source text together with its physical file lines', () => {
+    const raw = `{
+  "cells": [
+    {
+      "cell_type": "code",
+      "id": "cell-id",
+      "metadata": {},
+      "source": [
+        "alpha\\n",
+        "beta"
+      ]
+    }
+  ]
+}`;
+
+    const sourceMap = buildNotebookCellSourceMaps(raw).get('cell-id');
+
+    expect(sourceMap).toEqual({
+      source: 'alpha\nbeta',
+      fileLines: [lineOf(raw, '"alpha\\n"'), lineOf(raw, '"beta"')]
+    });
   });
 
   test('returns an empty map for invalid JSON', () => {

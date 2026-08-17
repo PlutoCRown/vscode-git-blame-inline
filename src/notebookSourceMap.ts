@@ -10,6 +10,11 @@ type StringToken = {
   value: string;
 };
 
+export type NotebookCellSourceMap = {
+  fileLines: number[];
+  source: string;
+};
+
 /**
  * Parse an ipynb as JSON and map each cell's editor lines to physical file lines.
  *
@@ -20,7 +25,18 @@ type StringToken = {
 export function buildNotebookCellSourceLineMaps(
   rawContent: string
 ): Map<string, number[]> {
-  const result = new Map<string, number[]>();
+  return new Map(
+    [...buildNotebookCellSourceMaps(rawContent)].map(([cellId, sourceMap]) => [
+      cellId,
+      sourceMap.fileLines
+    ])
+  );
+}
+
+export function buildNotebookCellSourceMaps(
+  rawContent: string
+): Map<string, NotebookCellSourceMap> {
+  const result = new Map<string, NotebookCellSourceMap>();
 
   let notebook: { cells?: ParsedCell[] };
   try {
@@ -43,7 +59,10 @@ export function buildNotebookCellSourceLineMaps(
 
     const cellId = resolveStoredCellId(cell);
     if (cellId) {
-      result.set(cellId, fileLines);
+      result.set(cellId, {
+        fileLines,
+        source: Array.isArray(cell.source) ? cell.source.join('') : cell.source ?? ''
+      });
     }
   }
 

@@ -7,10 +7,11 @@ import { BlameInfo, RemoteInfo } from './types';
 import { t } from './i18n';
 import {
   NOTEBOOK_CELL_SCHEME,
-  buildNotebookCellSourceLineMaps,
+  buildNotebookCellSourceMaps,
   findNotebookCellRef,
   mapFileBlameToCellBlame
 } from './notebookUtils';
+import { alignCurrentLinesToSavedFileLines } from './lineAlignment';
 import { isLikelyBinaryPath } from './uriUtils';
 import { getBlameLineRange } from './rangeUtils';
 import { ResolvedGitUri, UriResolverRegistry } from './uriResolverRegistry';
@@ -463,12 +464,23 @@ export class BlameController {
     );
 
     try {
-      const lineMaps = buildNotebookCellSourceLineMaps(target.raw);
-      const sourceFileLines = lineMaps.get(ref.cellId);
-      if (!sourceFileLines || sourceFileLines.length === 0) {
+      const sourceMaps = buildNotebookCellSourceMaps(target.raw);
+      const sourceMap = sourceMaps.get(ref.cellId);
+      if (!sourceMap || sourceMap.fileLines.length === 0) {
         this.decorationProvider.clearDecorations(editor);
         return;
       }
+
+      const isDirty =
+        target.isWorkingTree &&
+        (target.isDirty || ref.notebook.isDirty || document.isDirty);
+      const sourceFileLines = isDirty
+        ? alignCurrentLinesToSavedFileLines(
+            sourceMap.source,
+            document.getText(),
+            sourceMap.fileLines
+          )
+        : sourceMap.fileLines;
 
       const fileBlame = await this.gitService.getBlameForRepoFile(
         repoPath,
@@ -497,7 +509,6 @@ export class BlameController {
       const cellBlame = mapFileBlameToCellBlame(fileBlame, sourceFileLines);
 
       if (target.isWorkingTree) {
-        const isDirty = target.isDirty || ref.notebook.isDirty || document.isDirty;
         if (!isDirty) {
           await this.applyUncommittedTimestampsForPath(target.workingTreePath, cellBlame);
         } else {
