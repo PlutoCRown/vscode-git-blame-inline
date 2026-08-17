@@ -1,12 +1,14 @@
 # Changelog
 
-## 1.2.3 - 2026-08-17
-### Improvements
-- Reduce the extension package size.
-
 ## 1.2.2 - 2026-08-17
 ### Features
 - Show inline blame and hover details on both sides of Diff views opened by the Git Graph extension (`mhutchie.git-graph`).
+
+### Fixes
+- Fix Jupyter notebook blame selecting an adjacent cell's `source` when large outputs place the current cell's `source` far from its `id`.
+
+### Improvements
+- Reduce the extension package size.
 
 ## 1.2.1 - 2026-07-27
 ### Fixes

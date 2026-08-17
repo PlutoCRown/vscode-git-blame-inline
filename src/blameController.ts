@@ -367,7 +367,7 @@ export class BlameController {
   }
 
   /**
-   * 仅对当前聚焦的 notebook cell 显示 blame（按 cell id 映射到 .ipynb 文件行）
+   * 仅对当前聚焦的 notebook cell 显示 blame（按 cell 结构映射到 .ipynb 文件行）
    * 支持工作区 file: 与 Diff/SCM 中的 git: notebook（左右两侧均可连续跳转）
    */
   private async updateNotebookCellBlame(editor: vscode.TextEditor): Promise<void> {
