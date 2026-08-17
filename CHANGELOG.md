@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+### Fixes
+- Restrict trusted hover commands, escape repository-controlled Markdown, and pass Diff command context explicitly instead of through shared global state.
+- Honor `rangeBlameThreshold: 0` as full-file blame and validate range settings as non-negative numbers.
+- Release document and ranged-blame caches when editors close, discard stale async results, bound per-document cache growth, and make negative repository-root caching recover after `git init`.
+
+### Development
+- Slim VSIX packaging with an explicit allowlist for the bundled runtime and required Marketplace metadata.
+- Add unit tests for blame parsing, ranged blame selection, and Markdown command encoding, plus CI verification for typecheck, tests, and production builds.
+- Keep `extension.ts` as a small composition root, move Diff and stash commands into dedicated modules, and share one `GitService` instance across controllers and commands.
+
 ## 1.2.2 - 2026-08-17
 ### Features
 - Show inline blame and hover details on both sides of Diff views opened by the Git Graph extension (`mhutchie.git-graph`).

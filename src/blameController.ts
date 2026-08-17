@@ -20,6 +20,7 @@ import {
   parseGitGraphDiffUri,
   parseGitUriQuery
 } from './uriUtils';
+import { getBlameLineRange } from './rangeUtils';
 
 function isDiffRelatedScheme(scheme: string): boolean {
   return scheme === 'git' ||
@@ -27,6 +28,8 @@ function isDiffRelatedScheme(scheme: string): boolean {
     scheme === GIT_GRAPH_SCHEME ||
     scheme === NOTEBOOK_CELL_SCHEME;
 }
+
+const MAX_CACHE_KEYS_PER_DOCUMENT = 8;
 
 /**
  * Blame 控制器：协调各组件工作
@@ -53,15 +56,8 @@ export class BlameController {
   private selectionUpdateTimeout: NodeJS.Timeout | undefined;
   private pendingSelectionEditors = new Set<vscode.TextEditor>();
 
-  // 存储当前光标位置的 commit 信息，供命令使用
-  static currentCommitHash: string | undefined;
-  /** 当前 blame 行在对应 commit 时的仓库内路径（处理 rename） */
-  static currentCommitFilePath: string | undefined;
-  /** parent 侧路径（rename 发生在该 commit 时） */
-  static currentPreviousFilePath: string | undefined;
-
-  constructor(context: vscode.ExtensionContext) {
-    this.gitService = new GitService();
+  constructor(context: vscode.ExtensionContext, gitService: GitService) {
+    this.gitService = gitService;
     this.decorationProvider = new DecorationProvider();
 
     // 注册 hover provider
@@ -206,10 +202,16 @@ export class BlameController {
       })
     );
 
+    this.disposables.push(
+      vscode.workspace.onDidCloseTextDocument(document => {
+        this.clearDocumentCaches(document.uri);
+      })
+    );
+
     // Notebook 保存后按 cell id 重新映射 blame
     this.disposables.push(
       vscode.workspace.onDidSaveNotebookDocument(notebook => {
-        this.clearDocumentCaches(notebook.uri);
+        this.clearNotebookCaches(notebook);
         this.refreshNotebookEditors(notebook.uri.fsPath);
       })
     );
@@ -217,13 +219,18 @@ export class BlameController {
     // Notebook 结构 / 内容变更：清缓存并延迟刷新可见 cell
     this.disposables.push(
       vscode.workspace.onDidChangeNotebookDocument(event => {
-        this.clearDocumentCaches(event.notebook.uri);
+        this.clearNotebookCaches(event.notebook);
         if (this.updateTimeout) {
           clearTimeout(this.updateTimeout);
         }
         this.updateTimeout = setTimeout(() => {
           this.refreshNotebookEditors(event.notebook.uri.fsPath);
         }, 200);
+      })
+    );
+    this.disposables.push(
+      vscode.workspace.onDidCloseNotebookDocument(notebook => {
+        this.clearNotebookCaches(notebook);
       })
     );
 
@@ -306,21 +313,24 @@ export class BlameController {
     }
 
     // 大文件（如 lockfile）使用行范围 blame，只查光标附近 ±padding 行，避免全量 blame
-    const useRangeMode = document.lineCount > this.rangeBlameThreshold;
+    const cursorLine = editor.selections[0]?.active.line ?? 0;
+    const lineRange = getBlameLineRange(
+      document.lineCount,
+      cursorLine,
+      this.rangeBlameThreshold,
+      this.rangeBlamePadding
+    );
+    const useRangeMode = lineRange !== undefined;
     info.isRangeMode = useRangeMode;
 
     let cacheKey = info.cacheKey;
-    let lineRange: { start: number; end: number } | undefined;
 
-    if (useRangeMode) {
-      const cursorLine = editor.selections[0]?.active.line ?? 0;
-      const startLine = Math.max(1, cursorLine + 1 - this.rangeBlamePadding);
-      const endLine = Math.min(document.lineCount, cursorLine + 1 + this.rangeBlamePadding);
-      lineRange = { start: startLine, end: endLine };
-      cacheKey = `${info.cacheKey}::L${startLine}-${endLine}`;
+    if (lineRange) {
+      cacheKey = `${info.cacheKey}::L${lineRange.start}-${lineRange.end}`;
     }
 
     this.documentInfoCache.set(document.uri.toString(), { ...info, cacheKey });
+    this.trackDocumentCacheKey(this.getDocumentCacheTrackingKey(document.uri), cacheKey);
 
     try {
       // dirty 时用编辑器内容对齐行号；未改动的行仍显示已提交 blame
@@ -333,6 +343,11 @@ export class BlameController {
         (document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined),
         lineRange
       );
+
+      // A newer selection/document update may have replaced this request while Git was running.
+      if (this.documentInfoCache.get(document.uri.toString())?.cacheKey !== cacheKey) {
+        return;
+      }
 
       // 获取远程仓库信息（如果还没有缓存）
       if (!this.remoteCache.has(info.repoPath)) {
@@ -349,7 +364,6 @@ export class BlameController {
         if (!document.isDirty) {
           await this.applyUncommittedTimestamps(document, blameMap);
         }
-        this.trackDocumentCacheKey(document.uri.fsPath, cacheKey);
         this.blameCache.set(cacheKey, blameMap);
         this.decorationProvider.updateDecorations(editor, blameMap);
       } else {
@@ -393,6 +407,14 @@ export class BlameController {
       repoPath,
       filePath
     });
+    this.trackDocumentCacheKey(
+      this.getDocumentCacheTrackingKey(ref.notebook.uri),
+      fileCacheKey
+    );
+    this.trackDocumentCacheKey(
+      this.getDocumentCacheTrackingKey(document.uri),
+      cellCacheKey
+    );
 
     try {
       const lineMaps = buildNotebookCellSourceLineMaps(target.raw);
@@ -409,6 +431,10 @@ export class BlameController {
         fileCacheKey,
         target.contents
       );
+
+      if (this.documentInfoCache.get(document.uri.toString())?.cacheKey !== cellCacheKey) {
+        return;
+      }
 
       await this.ensureRemoteCached(repoPath);
 
@@ -432,8 +458,6 @@ export class BlameController {
         }
       }
 
-      this.trackDocumentCacheKey(ref.notebookFsPath, fileCacheKey);
-      this.trackDocumentCacheKey(ref.notebookFsPath, cellCacheKey);
       this.blameCache.set(cellCacheKey, cellBlame);
       this.decorationProvider.updateDecorations(editor, cellBlame);
     } catch (error) {
@@ -691,33 +715,46 @@ export class BlameController {
     return this.documentInfoCache.get(document.uri.toString())?.repoPath ?? null;
   }
 
-  private trackDocumentCacheKey(documentPath: string, cacheKey: string): void {
-    const keys = this.documentCacheKeys.get(documentPath) ?? new Set<string>();
+  private getDocumentCacheTrackingKey(uri: vscode.Uri): string {
+    return uri.scheme === 'file' ? uri.fsPath : uri.toString();
+  }
+
+  private trackDocumentCacheKey(documentKey: string, cacheKey: string): void {
+    const keys = this.documentCacheKeys.get(documentKey) ?? new Set<string>();
     keys.add(cacheKey);
-    this.documentCacheKeys.set(documentPath, keys);
+    this.documentCacheKeys.set(documentKey, keys);
+
+    while (keys.size > MAX_CACHE_KEYS_PER_DOCUMENT) {
+      const oldestKey = keys.values().next().value as string | undefined;
+      if (!oldestKey) {
+        break;
+      }
+      keys.delete(oldestKey);
+      this.gitService.clearCache(oldestKey);
+      this.blameCache.delete(oldestKey);
+    }
   }
 
   private clearDocumentCaches(documentUri: vscode.Uri): void {
-    const documentPath = documentUri.fsPath;
-    const cacheKeys = this.documentCacheKeys.get(documentPath);
+    const documentKey = this.getDocumentCacheTrackingKey(documentUri);
+    const cacheKeys = this.documentCacheKeys.get(documentKey);
 
     if (cacheKeys) {
       for (const cacheKey of cacheKeys) {
         this.gitService.clearCache(cacheKey);
         this.blameCache.delete(cacheKey);
       }
-      this.documentCacheKeys.delete(documentPath);
+      this.documentCacheKeys.delete(documentKey);
     }
 
     this.documentInfoCache.delete(documentUri.toString());
-    this.gitService.clearCache(documentPath);
-    this.blameCache.delete(documentPath);
   }
 
-  private clearDocumentDecorations(document: vscode.TextDocument): void {
-    vscode.window.visibleTextEditors
-      .filter(editor => editor.document.uri.toString() === document.uri.toString())
-      .forEach(editor => this.decorationProvider.clearDecorations(editor));
+  private clearNotebookCaches(notebook: vscode.NotebookDocument): void {
+    this.clearDocumentCaches(notebook.uri);
+    for (const cell of notebook.getCells()) {
+      this.clearDocumentCaches(cell.document.uri);
+    }
   }
 
   private scheduleDocumentUpdate(document: vscode.TextDocument): void {

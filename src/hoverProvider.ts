@@ -1,8 +1,12 @@
 import * as vscode from 'vscode';
 import { BlameInfo, RemoteInfo } from './types';
 import { formatDate } from './utils';
-import { BlameController } from './blameController';
 import { t } from './i18n';
+import {
+  buildCommandUri,
+  escapeMarkdownLinkTarget,
+  escapeMarkdownText
+} from './markdownUtils';
 
 const maxSmallIntegerV8 = 2 ** 30 - 1; // Max number that can be stored in V8's smis (small integers)
 
@@ -56,12 +60,15 @@ export class BlameHoverProvider implements vscode.HoverProvider {
    */
   private createMarkdown(blame: BlameInfo, remoteInfo: RemoteInfo | null): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
-    md.supportHtml = true;
-    md.isTrusted = true;
+    md.isTrusted = { enabledCommands: ['git-blame-lite.showCommitDiff'] };
 
     const formattedDate = formatDate(blame.timestamp);
+    const viewChangesUri = buildCommandUri('git-blame-lite.showCommitDiff', [
+      blame.hash,
+      blame.pathAtCommit,
+      blame.previousPath
+    ]);
 
-    md.appendMarkdown(`<div style="max-width: 600px; word-wrap: break-word;">\n\n`);
     md.appendMarkdown(`### ${t.hover.title}\n\n`);
 
     if (blame.isUncommitted) {
@@ -69,11 +76,7 @@ export class BlameHoverProvider implements vscode.HoverProvider {
       md.appendMarkdown(`**${t.hover.time}:** ${formattedDate}\n\n`);
       md.appendMarkdown(`**${t.hover.message}:** ${t.blame.notCommittedYet}\n\n`);
       md.appendMarkdown(`---\n\n`);
-      BlameController.currentCommitHash = blame.hash;
-      BlameController.currentCommitFilePath = blame.pathAtCommit;
-      BlameController.currentPreviousFilePath = blame.previousPath;
-      md.appendMarkdown(`[${t.hover.viewChanges}](command:git-blame-lite.showCommitDiff)`);
-      md.appendMarkdown(`\n\n</div>`);
+      md.appendMarkdown(`[${t.hover.viewChanges}](${viewChangesUri})`);
       return md;
     }
 
@@ -84,36 +87,28 @@ export class BlameHoverProvider implements vscode.HoverProvider {
     if (remoteInfo) {
       const authorUrl = this.getAuthorUrl(remoteInfo, blame.authorEmail);
       if (authorUrl) {
-        md.appendMarkdown(`**${t.hover.author}:** [${blame.author}](${authorUrl})\n\n`);
+        md.appendMarkdown(`**${t.hover.author}:** [${escapeMarkdownText(blame.author)}](${escapeMarkdownLinkTarget(authorUrl)})\n\n`);
       } else {
-        md.appendMarkdown(`**${t.hover.author}:** ${blame.author}\n\n`);
+        md.appendMarkdown(`**${t.hover.author}:** ${escapeMarkdownText(blame.author)}\n\n`);
       }
     } else {
-      md.appendMarkdown(`**${t.hover.author}:** ${blame.author}\n\n`);
+      md.appendMarkdown(`**${t.hover.author}:** ${escapeMarkdownText(blame.author)}\n\n`);
     }
 
-    md.appendMarkdown(`**${t.hover.email}:** ${blame.authorEmail}\n\n`);
+    md.appendMarkdown(`**${t.hover.email}:** ${escapeMarkdownText(blame.authorEmail)}\n\n`);
     md.appendMarkdown(`**${t.hover.time}:** ${formattedDate}\n\n`);
 
-    md.appendMarkdown(`**${t.hover.message}:** ${blame.summary}\n\n`);
+    md.appendMarkdown(`**${t.hover.message}:** ${escapeMarkdownText(blame.summary)}\n\n`);
 
     // 添加操作链接
     md.appendMarkdown(`---\n\n`);
 
     if (remoteInfo) {
       const commitUrl = this.getCommitUrl(remoteInfo, blame.hash);
-      md.appendMarkdown(`[${t.hover.viewOnHost(remoteInfo.host)}](${commitUrl}) | `);
+      md.appendMarkdown(`[${escapeMarkdownText(t.hover.viewOnHost(remoteInfo.host))}](${escapeMarkdownLinkTarget(commitUrl)}) | `);
     }
 
-    // 保存当前 commit 信息到全局变量，供命令使用（含 rename 前的历史路径）
-    BlameController.currentCommitHash = blame.hash;
-    BlameController.currentCommitFilePath = blame.pathAtCommit;
-    BlameController.currentPreviousFilePath = blame.previousPath;
-
-    // 添加查看差异命令链接（不传参数，命令内部从全局变量读取）
-    md.appendMarkdown(`[${t.hover.viewChanges}](command:git-blame-lite.showCommitDiff)`);
-
-    md.appendMarkdown(`\n\n</div>`);
+    md.appendMarkdown(`[${t.hover.viewChanges}](${viewChangesUri})`);
 
     return md;
   }

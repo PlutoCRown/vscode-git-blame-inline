@@ -49,11 +49,18 @@ bun run build
 git-blame-inline/
 ├── src/
 │   ├── extension.ts          # Extension entry point
+│   ├── commands/             # Diff and stash command handlers
 │   ├── blameController.ts    # Main controller coordinating all components
+│   ├── blameParser.ts        # Pure git blame porcelain parser
 │   ├── gitService.ts         # Git operations (blame, remote info)
+│   ├── gitApi.ts             # Built-in VS Code Git API access
 │   ├── decorationProvider.ts # Inline decoration rendering
 │   ├── hoverProvider.ts      # Hover tooltip with commit details
 │   ├── diffDocProvider.ts    # Virtual document provider for diffs
+│   ├── notebookUtils.ts      # Notebook cell-to-file line mapping
+│   ├── uriUtils.ts           # File, Git, and external Diff URI parsing
+│   ├── rangeUtils.ts         # Ranged blame selection policy
+│   ├── markdownUtils.ts      # Safe hover Markdown helpers
 │   ├── i18n.ts               # Internationalization support
 │   ├── types.ts              # TypeScript type definitions
 │   └── utils.ts              # Utility functions

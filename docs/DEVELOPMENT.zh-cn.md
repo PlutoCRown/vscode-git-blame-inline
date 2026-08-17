@@ -49,11 +49,18 @@ bun run build
 git-blame-inline/
 ├── src/
 │   ├── extension.ts          # 扩展入口点
+│   ├── commands/             # Diff 与 stash 命令处理器
 │   ├── blameController.ts    # 主控制器，协调所有组件
+│   ├── blameParser.ts        # git blame porcelain 纯解析器
 │   ├── gitService.ts         # Git 操作（blame、远程信息）
+│   ├── gitApi.ts             # VS Code 内置 Git API 访问
 │   ├── decorationProvider.ts # 行内装饰渲染
 │   ├── hoverProvider.ts      # 显示提交详情的悬停提示
 │   ├── diffDocProvider.ts    # 差异的虚拟文档提供器
+│   ├── notebookUtils.ts      # Notebook cell 与文件行映射
+│   ├── uriUtils.ts           # 文件、Git 与外部 Diff URI 解析
+│   ├── rangeUtils.ts         # 范围 blame 选择策略
+│   ├── markdownUtils.ts      # 安全 hover Markdown 工具
 │   ├── i18n.ts               # 国际化支持
 │   ├── types.ts              # TypeScript 类型定义
 │   └── utils.ts              # 工具函数

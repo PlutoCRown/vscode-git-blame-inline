@@ -86,11 +86,13 @@
                 },
                 "gitBlameInline.rangeBlameThreshold": {
                     "type": "number",
+                    "minimum": 0,
                     "default": 500,
                     "description": "%config.rangeBlameThreshold%"
                 },
                 "gitBlameInline.rangeBlamePadding": {
                     "type": "number",
+                    "minimum": 0,
                     "default": 100,
                     "description": "%config.rangeBlamePadding%"
                 }
@@ -100,6 +102,7 @@
     "scripts": {
         "dev": "bun build src/extension.ts --outdir dist --watch --external vscode --target=node --format=cjs --sourcemap=external",
         "build": "bun build src/extension.ts --outdir dist --minify --external vscode --target=node --format=cjs",
+        "test": "bun test",
         "typecheck": "tsc --noEmit",
         "package": "bun run build && vsce package",
         "vscode:prepublish": "bun run build"

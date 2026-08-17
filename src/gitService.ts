@@ -3,7 +3,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import { stat } from 'fs/promises';
-import { BlameInfo, RemoteInfo, UNCOMMITTED_HASH } from './types';
+import { BlameInfo, RemoteInfo } from './types';
+import { parseBlameOutput } from './blameParser';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,8 +14,10 @@ const execFileAsync = promisify(execFile);
 export class GitService {
   private cache = new Map<string, Map<number, BlameInfo>>();
   private cacheTimestamps = new Map<string, number>();
-  private repoRootCache = new Map<string, string | null>();
+  private repoRootCache = new Map<string, { value: string | null; expiresAt: number }>();
   private readonly CACHE_TTL = 60000; // 缓存 60 秒
+  private readonly REPO_ROOT_CACHE_TTL = 5 * 60 * 1000;
+  private readonly REPO_ROOT_MISS_TTL = 5000;
   private pendingRequests = new Map<string, Promise<Map<number, BlameInfo> | null>>();
   private pendingControllers = new Map<string, AbortController>();
 
@@ -115,7 +118,7 @@ export class GitService {
 
         const { stdout } = await this.execGit(args, repoPath, contents, controller.signal);
 
-        const blameMap = this.parseBlameOutput(stdout);
+        const blameMap = parseBlameOutput(stdout);
 
         this.cache.set(key, blameMap);
         this.cacheTimestamps.set(key, Date.now());
@@ -210,70 +213,6 @@ export class GitService {
     }
   }
 
-  /**
-   * 解析 git blame --line-porcelain 输出
-   */
-  private parseBlameOutput(output: string): Map<number, BlameInfo> {
-    const lines = output.split('\n');
-    const blameMap = new Map<number, BlameInfo>();
-
-    let currentHash = '';
-    let currentAuthor = '';
-    let currentAuthorEmail = '';
-    let currentTimestamp = 0;
-    let currentSummary = '';
-    let currentLineNumber = 0;
-    let currentPathAtCommit = '';
-    let currentPreviousPath = '';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      if (line.match(/^[0-9a-f]{40}/)) {
-        // 新的 commit 行: hash originalLine finalLine numLines
-        const parts = line.split(' ');
-        currentHash = parts[0];
-        currentLineNumber = parseInt(parts[2], 10);
-        currentPathAtCommit = '';
-        currentPreviousPath = '';
-      } else if (line.startsWith('author ')) {
-        currentAuthor = line.substring(7);
-      } else if (line.startsWith('author-mail ')) {
-        currentAuthorEmail = line.substring(12).replace(/^<|>$/g, '');
-      } else if (line.startsWith('author-time ')) {
-        currentTimestamp = parseInt(line.substring(12), 10);
-      } else if (line.startsWith('summary ')) {
-        currentSummary = line.substring(8);
-      } else if (line.startsWith('filename ')) {
-        currentPathAtCommit = line.substring(9);
-      } else if (line.startsWith('previous ')) {
-        // previous <hash> <path>
-        const previousParts = line.substring(9).split(' ');
-        if (previousParts.length >= 2) {
-          currentPreviousPath = previousParts.slice(1).join(' ');
-        }
-      } else if (line.startsWith('\t')) {
-        // 实际代码行，保存 blame 信息（含尚未提交的本地改动）
-        if (currentHash && currentLineNumber > 0) {
-          const isUncommitted = currentHash === UNCOMMITTED_HASH;
-          blameMap.set(currentLineNumber, {
-            hash: currentHash,
-            author: currentAuthor,
-            authorEmail: currentAuthorEmail,
-            timestamp: currentTimestamp,
-            summary: currentSummary,
-            lineNumber: currentLineNumber,
-            isUncommitted,
-            pathAtCommit: currentPathAtCommit || undefined,
-            previousPath: currentPreviousPath || undefined
-          });
-        }
-      }
-    }
-
-    return blameMap;
-  }
-
   private execGit(
     args: string[],
     cwd: string,
@@ -322,6 +261,9 @@ export class GitService {
       return cached;
     }
 
+    this.cache.delete(filePath);
+    this.cacheTimestamps.delete(filePath);
+
     return null;
   }
 
@@ -346,10 +288,15 @@ export class GitService {
   async getRepositoryRoot(filePath: string): Promise<string | null> {
     let dir = path.resolve(path.dirname(filePath));
 
+    // Rename 历史路径可能已经不存在：先找到最近的现存父目录，再只执行一次 rev-parse。
     for (let i = 0; i < 64; i++) {
-      const root = await this.getRepositoryRootFromDirectory(dir);
-      if (root) {
-        return root;
+      try {
+        const stats = await stat(dir);
+        if (stats.isDirectory()) {
+          return this.getRepositoryRootFromDirectory(dir);
+        }
+      } catch {
+        // Continue with the parent directory.
       }
 
       const parent = path.dirname(dir);
@@ -366,9 +313,11 @@ export class GitService {
    * 获取目录所属的 Git 仓库根目录
    */
   async getRepositoryRootFromDirectory(directory: string): Promise<string | null> {
-    if (this.repoRootCache.has(directory)) {
-      return this.repoRootCache.get(directory) ?? null;
+    const cached = this.repoRootCache.get(directory);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
     }
+    this.repoRootCache.delete(directory);
 
     try {
       const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
@@ -377,10 +326,17 @@ export class GitService {
       });
 
       const repoPath = stdout.trim();
-      this.repoRootCache.set(directory, repoPath || null);
+      this.repoRootCache.set(directory, {
+        value: repoPath || null,
+        expiresAt: Date.now() + this.REPO_ROOT_CACHE_TTL
+      });
       return repoPath || null;
     } catch {
-      this.repoRootCache.set(directory, null);
+      // Negative results are short-lived so `git init` becomes visible without reloading VS Code.
+      this.repoRootCache.set(directory, {
+        value: null,
+        expiresAt: Date.now() + this.REPO_ROOT_MISS_TTL
+      });
       return null;
     }
   }
@@ -396,6 +352,7 @@ export class GitService {
     this.pendingRequests.clear();
     this.cache.clear();
     this.cacheTimestamps.clear();
+    this.repoRootCache.clear();
   }
 
   /**

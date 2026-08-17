@@ -1,45 +1,11 @@
-# VS Code Extension - Files to ignore when packaging
-
-# Development files
-.vscode/**
-.vscode-test/**
-src/**
-*.ts
-*.map
-tsconfig.json
-bun.lock
-
-# Documentation (keep only essential)
-TODO.md
-CONFIGURATION_CHECKLIST.md
-RELEASE_CHECKLIST.md
-docs/ICON*.md
-
-# Design files
-icon.svg
-
-# Reference materials
-gitlens-reference/**
-vscode-git-graph/**
-
-# Node modules (installed dependencies will be bundled in dist)
-node_modules/**
-
-# Git files
-.gitignore
-.git/**
-
-# IDE files
-.idea/**
-*.code-workspace
-
-# Test files
-test/**
-tests/**
-
-# Build scripts
-scripts/**
-
-# Misc
-*.log
-.DS_Store
+# Package only the bundled runtime and the metadata required by VS Code and
+# the Marketplace. New repository files stay out of the VSIX by default.
+**
+!dist/**
+!package.json
+!package.nls.json
+!package.nls.zh-cn.json
+!icon.png
+!README.md
+!CHANGELOG.md
+!LICENSE
