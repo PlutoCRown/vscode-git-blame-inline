@@ -12,6 +12,8 @@ import {
   mapFileBlameToCellBlame
 } from './notebookUtils';
 import { alignCurrentLinesToSavedFileLines } from './lineAlignment';
+import { collectNotebookCellBlameUris } from './notebookVisibility';
+import type { VisibleNotebookCell } from './notebookVisibility';
 import { isLikelyBinaryPath } from './uriUtils';
 import { getBlameLineRange } from './rangeUtils';
 import { ResolvedGitUri, UriResolverRegistry } from './uriResolverRegistry';
@@ -174,7 +176,7 @@ export class BlameController {
           ? vscode.window.visibleTextEditors.filter(
               editor =>
                 editor.document.uri.scheme !== NOTEBOOK_CELL_SCHEME ||
-                this.isSelectedNotebookCell(editor.document.uri)
+                this.shouldShowNotebookCellBlame(editor.document.uri)
             )
           : [event.textEditor];
 
@@ -600,18 +602,21 @@ export class BlameController {
     this.synchronizeVisibleNotebookCellBlame();
   }
 
-  /** Keep decorations only on the selected cell of each visible NotebookEditor. */
+  /**
+   * Keep decorations on selected regular-notebook cells and visible cells in
+   * active notebook diff tabs.
+   */
   private synchronizeVisibleNotebookCellBlame(): void {
     if (!this.enabled || !this.notebookEnabled) {
       this.clearVisibleNotebookCellDecorations();
       return;
     }
 
-    const selectedCellUris = this.clearInactiveVisibleNotebookCellDecorations();
+    const blameCellUris = this.clearInactiveVisibleNotebookCellDecorations();
     for (const editor of vscode.window.visibleTextEditors) {
       if (
         editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
-        selectedCellUris.has(editor.document.uri.toString())
+        blameCellUris.has(editor.document.uri.toString())
       ) {
         void this.updateBlame(editor);
       }
@@ -619,12 +624,12 @@ export class BlameController {
   }
 
   private clearInactiveVisibleNotebookCellDecorations(): Set<string> {
-    const selectedCellUris = this.getSelectedNotebookCellUris();
+    const blameCellUris = this.getNotebookCellBlameUris();
 
     for (const editor of [...this.pendingSelectionEditors]) {
       if (
         editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
-        !selectedCellUris.has(editor.document.uri.toString())
+        !blameCellUris.has(editor.document.uri.toString())
       ) {
         this.pendingSelectionEditors.delete(editor);
       }
@@ -633,13 +638,13 @@ export class BlameController {
     for (const editor of vscode.window.visibleTextEditors) {
       if (
         editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
-        !selectedCellUris.has(editor.document.uri.toString())
+        !blameCellUris.has(editor.document.uri.toString())
       ) {
         this.decorationProvider.clearDecorations(editor);
       }
     }
 
-    return selectedCellUris;
+    return blameCellUris;
   }
 
   private clearVisibleNotebookCellDecorations(): void {
@@ -681,12 +686,50 @@ export class BlameController {
     return selectedCellUris;
   }
 
-  private isSelectedNotebookCell(cellUri: vscode.Uri): boolean {
-    return this.getSelectedNotebookCellUris().has(cellUri.toString());
+  private getVisibleNotebookDiffUris(): Set<string> {
+    const notebookUris = new Set<string>();
+
+    for (const group of vscode.window.tabGroups.all) {
+      const input = group.activeTab?.input;
+      if (!(input instanceof vscode.TabInputNotebookDiff)) {
+        continue;
+      }
+      notebookUris.add(input.original.toString());
+      notebookUris.add(input.modified.toString());
+    }
+
+    return notebookUris;
+  }
+
+  private getNotebookCellBlameUris(): Set<string> {
+    const visibleCells: VisibleNotebookCell[] = [];
+
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (editor.document.uri.scheme !== NOTEBOOK_CELL_SCHEME) {
+        continue;
+      }
+      const ref = findNotebookCellRef(editor.document);
+      if (ref) {
+        visibleCells.push({
+          cellUri: editor.document.uri.toString(),
+          notebookUri: ref.notebook.uri.toString()
+        });
+      }
+    }
+
+    return collectNotebookCellBlameUris(
+      this.getSelectedNotebookCellUris(),
+      visibleCells,
+      this.getVisibleNotebookDiffUris()
+    );
   }
 
   private shouldShowNotebookCellBlame(cellUri: vscode.Uri): boolean {
-    return this.enabled && this.notebookEnabled && this.isSelectedNotebookCell(cellUri);
+    return (
+      this.enabled &&
+      this.notebookEnabled &&
+      this.getNotebookCellBlameUris().has(cellUri.toString())
+    );
   }
 
   private async ensureRemoteCached(repoPath: string): Promise<void> {
