@@ -39,6 +39,7 @@ export class BlameController {
   private documentCacheKeys = new Map<string, Set<string>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
   private enabled = true;
+  private notebookEnabled = true;
   private rangeBlameThreshold = 500;
   private rangeBlamePadding = 100;
   private updateTimeout: NodeJS.Timeout | undefined;
@@ -56,6 +57,12 @@ export class BlameController {
     // 注册 hover provider
     const hoverProvider = new BlameHoverProvider(
       (document, line) => {
+        if (
+          document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
+          !this.notebookEnabled
+        ) {
+          return undefined;
+        }
         const key = this.getCacheKey(document);
         if (!key) {
           return undefined;
@@ -247,6 +254,7 @@ export class BlameController {
     // 读取配置
     const config = vscode.workspace.getConfiguration('gitBlameInline');
     this.enabled = config.get('enabled', true);
+    this.notebookEnabled = config.get('notebookEnabled', true);
     this.rangeBlameThreshold = config.get('rangeBlameThreshold', 500);
     this.rangeBlamePadding = config.get('rangeBlamePadding', 100);
 
@@ -260,6 +268,15 @@ export class BlameController {
         if (event.affectsConfiguration('gitBlameInline.rangeBlamePadding')) {
           const config = vscode.workspace.getConfiguration('gitBlameInline');
           this.rangeBlamePadding = config.get('rangeBlamePadding', 100);
+        }
+        if (event.affectsConfiguration('gitBlameInline.notebookEnabled')) {
+          const config = vscode.workspace.getConfiguration('gitBlameInline');
+          this.notebookEnabled = config.get('notebookEnabled', true);
+          if (this.enabled && this.notebookEnabled) {
+            this.synchronizeVisibleNotebookCellBlame();
+          } else {
+            this.disableNotebookBlame();
+          }
         }
         if (event.affectsConfiguration('gitBlameInline.enabled')) {
           const config = vscode.workspace.getConfiguration('gitBlameInline');
@@ -398,7 +415,7 @@ export class BlameController {
    */
   private async updateNotebookCellBlame(editor: vscode.TextEditor): Promise<void> {
     const document = editor.document;
-    if (!this.isSelectedNotebookCell(document.uri)) {
+    if (!this.shouldShowNotebookCellBlame(document.uri)) {
       this.decorationProvider.clearDecorations(editor);
       return;
     }
@@ -421,7 +438,7 @@ export class BlameController {
       this.decorationProvider.clearDecorations(editor);
       return;
     }
-    if (!this.isSelectedNotebookCell(document.uri)) {
+    if (!this.shouldShowNotebookCellBlame(document.uri)) {
       this.decorationProvider.clearDecorations(editor);
       return;
     }
@@ -465,7 +482,7 @@ export class BlameController {
         return;
       }
 
-      if (!this.isSelectedNotebookCell(document.uri)) {
+      if (!this.shouldShowNotebookCellBlame(document.uri)) {
         this.decorationProvider.clearDecorations(editor);
         return;
       }
@@ -492,7 +509,7 @@ export class BlameController {
         }
       }
 
-      if (!this.isSelectedNotebookCell(document.uri)) {
+      if (!this.shouldShowNotebookCellBlame(document.uri)) {
         this.decorationProvider.clearDecorations(editor);
         return;
       }
@@ -574,6 +591,11 @@ export class BlameController {
 
   /** Keep decorations only on the selected cell of each visible NotebookEditor. */
   private synchronizeVisibleNotebookCellBlame(): void {
+    if (!this.enabled || !this.notebookEnabled) {
+      this.clearVisibleNotebookCellDecorations();
+      return;
+    }
+
     const selectedCellUris = this.clearInactiveVisibleNotebookCellDecorations();
     for (const editor of vscode.window.visibleTextEditors) {
       if (
@@ -609,6 +631,27 @@ export class BlameController {
     return selectedCellUris;
   }
 
+  private clearVisibleNotebookCellDecorations(): void {
+    for (const editor of [...this.pendingSelectionEditors]) {
+      if (editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME) {
+        this.pendingSelectionEditors.delete(editor);
+      }
+    }
+
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME) {
+        this.decorationProvider.clearDecorations(editor);
+      }
+    }
+  }
+
+  private disableNotebookBlame(): void {
+    this.clearVisibleNotebookCellDecorations();
+    for (const notebook of vscode.workspace.notebookDocuments) {
+      this.clearNotebookCaches(notebook);
+    }
+  }
+
   private getSelectedNotebookCellUris(): Set<string> {
     const selectedCellUris = new Set<string>();
     for (const notebookEditor of vscode.window.visibleNotebookEditors) {
@@ -629,6 +672,10 @@ export class BlameController {
 
   private isSelectedNotebookCell(cellUri: vscode.Uri): boolean {
     return this.getSelectedNotebookCellUris().has(cellUri.toString());
+  }
+
+  private shouldShowNotebookCellBlame(cellUri: vscode.Uri): boolean {
+    return this.enabled && this.notebookEnabled && this.isSelectedNotebookCell(cellUri);
   }
 
   private async ensureRemoteCached(repoPath: string): Promise<void> {
@@ -667,7 +714,7 @@ export class BlameController {
   private updateDecorationsFromCachedBlame(editor: vscode.TextEditor): boolean {
     if (
       editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
-      !this.isSelectedNotebookCell(editor.document.uri)
+      !this.shouldShowNotebookCellBlame(editor.document.uri)
     ) {
       this.pendingSelectionEditors.delete(editor);
       this.decorationProvider.clearDecorations(editor);

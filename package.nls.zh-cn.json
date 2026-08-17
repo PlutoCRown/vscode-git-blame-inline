@@ -6,6 +6,7 @@
     "command.stashChanges": "暂存更改...",
     "config.title": "Git Blame Lite",
     "config.enabled": "启用/禁用行内 blame 信息显示",
+    "config.notebookEnabled": "在 Jupyter Notebook（.ipynb）中显示行内 blame 信息",
     "config.showStashButton": "在源代码管理资源组中显示 Stash 按钮",
     "config.rangeBlameThreshold": "超过此行数的文件使用行范围 blame（git blame -L）而非全量 blame。设为 0 表示始终使用全量 blame。",
     "config.rangeBlamePadding": "行范围模式下光标上下各查询的行数。仅在文件超过 rangeBlameThreshold 时生效。"

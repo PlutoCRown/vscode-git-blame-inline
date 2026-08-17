@@ -6,6 +6,7 @@
     "command.stashChanges": "Stash Changes...",
     "config.title": "Git Blame Lite",
     "config.enabled": "Enable/disable inline blame information display",
+    "config.notebookEnabled": "Show inline blame information in Jupyter notebooks (.ipynb)",
     "config.showStashButton": "Show Stash button in source control resource groups",
     "config.rangeBlameThreshold": "Files with more lines than this use ranged blame (git blame -L) instead of full-file blame. Set to 0 to always use full-file blame.",
     "config.rangeBlamePadding": "Number of lines above and below the cursor to blame in ranged mode. Only effective when a file exceeds rangeBlameThreshold."

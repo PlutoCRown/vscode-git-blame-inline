@@ -79,6 +79,11 @@
                     "default": true,
                     "description": "%config.enabled%"
                 },
+                "gitBlameInline.notebookEnabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "%config.notebookEnabled%"
+                },
                 "gitBlameInline.showStashButton": {
                     "type": "boolean",
                     "default": true,
