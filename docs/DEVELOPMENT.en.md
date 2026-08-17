@@ -58,6 +58,8 @@ git-blame-inline/
 │   ├── hoverProvider.ts      # Hover tooltip with commit details
 │   ├── diffDocProvider.ts    # Virtual document provider for diffs
 │   ├── notebookUtils.ts      # Notebook cell-to-file line mapping
+│   ├── uriResolverRegistry.ts # Ordered URI resolver registry and contract
+│   ├── defaultUriResolvers.ts # Built-in file/Git/Git Graph URI adapters
 │   ├── uriUtils.ts           # File, Git, and external Diff URI parsing
 │   ├── rangeUtils.ts         # Ranged blame selection policy
 │   ├── markdownUtils.ts      # Safe hover Markdown helpers
@@ -108,6 +110,20 @@ Shows detailed commit information on hover:
 Virtual document provider for displaying commit diffs:
 - Fetches file content at specific commits
 - Integrates with VS Code's diff viewer
+
+### URI Resolver Registry
+
+`UriResolverRegistry` is the single compatibility boundary between editor URIs and Git blame. It normalizes every supported source into the same contract: repository root, repository-relative file path, revision or supplied contents, cache identity, and working-tree path. `BlameController`, hover registration, coordinated Diff refresh, notebook cells, and the commit Diff command consume this result without knowing a provider's URI encoding.
+
+Built-in adapters are registered in `defaultUriResolvers.ts` for:
+
+- Working-tree `file:` documents
+- VS Code SCM `git:` documents, including index and merge-stage refs
+- Git Blame Lite's `git-blame-inline:` fallback Diff documents
+- Git Graph's `git-graph:` Diff documents
+- Notebook cells, which recursively resolve their underlying notebook URI
+
+To support another extension, add one `UriResolver` and register it in `registerDefaultUriResolvers`. A resolver declares its schemes, optionally marks them as Diff-related, provides a cheap path lookup for binary-file rejection, and returns `null` when it cannot handle a URI. Resolvers are ordered by priority; failure or `null` falls through to the next adapter, and recursive adapter cycles are rejected.
 
 ## Development Workflow
 
@@ -170,6 +186,7 @@ To add a new language:
 - [ ] Click "View Changes" link in hover
 - [ ] Toggle blame display with command
 - [ ] Test with staged/unstaged changes
+- [ ] Verify blame on both sides of Git Blame Lite, VS Code SCM, and Git Graph Diff views
 - [ ] Try stash functionality
 - [ ] Switch between light/dark themes
 - [ ] Test with large files (performance)

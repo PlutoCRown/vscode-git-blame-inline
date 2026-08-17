@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { EncodedDiffUriData, GIT_BLAME_DIFF_SCHEME, parseEncodedDiffUri } from './uriUtils';
 
 const execFileAsync = promisify(execFile);
 
@@ -12,18 +13,13 @@ export const enum DiffSide {
 /**
  * Diff 文档数据
  */
-type DiffDocUriData = {
-  filePath: string;
-  commit: string;
-  repo: string;
-  exists: boolean;
-};
+type DiffDocUriData = EncodedDiffUriData;
 
 /**
  * 提供特定 Git 提交的文件内容用于 Diff 视图
  */
 export class DiffDocProvider implements vscode.TextDocumentContentProvider {
-  public static readonly scheme = 'git-blame-inline';
+  public static readonly scheme = GIT_BLAME_DIFF_SCHEME;
   private docs = new Map<string, string>();
 
   /**
@@ -91,5 +87,9 @@ export function encodeDiffDocUri(
  * 解码 Diff URI
  */
 export function decodeDiffDocUri(uri: vscode.Uri): DiffDocUriData {
-  return JSON.parse(Buffer.from(uri.query, 'base64').toString());
+  const data = parseEncodedDiffUri(uri, DiffDocProvider.scheme);
+  if (!data) {
+    throw new Error('Invalid Git Blame Lite Diff URI.');
+  }
+  return data;
 }

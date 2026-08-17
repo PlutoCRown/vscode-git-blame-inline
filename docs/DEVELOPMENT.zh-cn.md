@@ -58,6 +58,8 @@ git-blame-inline/
 │   ├── hoverProvider.ts      # 显示提交详情的悬停提示
 │   ├── diffDocProvider.ts    # 差异的虚拟文档提供器
 │   ├── notebookUtils.ts      # Notebook cell 与文件行映射
+│   ├── uriResolverRegistry.ts # 有序 URI resolver registry 与统一契约
+│   ├── defaultUriResolvers.ts # 内置 file/Git/Git Graph URI 适配器
 │   ├── uriUtils.ts           # 文件、Git 与外部 Diff URI 解析
 │   ├── rangeUtils.ts         # 范围 blame 选择策略
 │   ├── markdownUtils.ts      # 安全 hover Markdown 工具
@@ -108,6 +110,20 @@ git-blame-inline/
 用于显示提交差异的虚拟文档提供器：
 - 获取特定提交时的文件内容
 - 与 VS Code 的差异查看器集成
+
+### URI Resolver Registry
+
+`UriResolverRegistry` 是编辑器 URI 与 Git blame 之间唯一的兼容边界。所有来源都会被归一化为同一份结果：仓库根目录、仓库内相对路径、提交或指定内容、缓存身份以及工作区文件路径。`BlameController`、hover 注册、Diff 联动刷新、Notebook cell 和“查看提交 Diff”命令只消费该结果，不再了解各插件的 URI 编码细节。
+
+`defaultUriResolvers.ts` 默认注册以下适配器：
+
+- 工作区 `file:` 文档
+- VS Code Git 面板的 `git:` 文档，包括 index 和冲突 stage ref
+- Git Blame Lite 自己的 `git-blame-inline:` 后备 Diff 文档
+- Git Graph 的 `git-graph:` Diff 文档
+- Notebook cell：递归解析其底层 notebook URI
+
+兼容另一个扩展时，只需新增一个 `UriResolver` 并在 `registerDefaultUriResolvers` 中注册。Resolver 声明支持的 scheme，可将其标记为 Diff 来源，可提供用于提前跳过二进制文件的轻量路径解析，并在无法处理时返回 `null`。Registry 按优先级执行；异常或 `null` 会回退到下一个适配器，递归适配器形成的循环也会被阻止。
 
 ## 开发工作流
 
@@ -170,6 +186,7 @@ git-blame-inline/
 - [ ] 点击悬停中的"查看更改"链接
 - [ ] 使用命令切换 blame 显示
 - [ ] 测试已暂存/未暂存的更改
+- [ ] 验证 Git Blame Lite、VS Code Git 面板和 Git Graph 打开的 Diff 两侧都有 blame
 - [ ] 尝试 stash 功能
 - [ ] 在浅色/深色主题间切换
 - [ ] 测试大文件（性能）

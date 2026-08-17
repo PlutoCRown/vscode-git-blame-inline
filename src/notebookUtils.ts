@@ -1,6 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { getFilePathFromUri } from './uriUtils';
 
 export const NOTEBOOK_CELL_SCHEME = 'vscode-notebook-cell';
 
@@ -9,7 +7,6 @@ export type NotebookCellRef = {
   cell: vscode.NotebookCell;
   /** nbformat cell id（来自 metadata.id） */
   cellId: string;
-  notebookFsPath: string;
 };
 
 /**
@@ -34,30 +31,14 @@ export function findNotebookCellRef(
         return undefined;
       }
 
-      const notebookFsPath = resolveNotebookFsPath(notebook.uri);
-      if (!notebookFsPath) {
-        return undefined;
-      }
-
       return {
         notebook,
         cell,
-        cellId,
-        notebookFsPath
+        cellId
       };
     }
   }
 
-  return undefined;
-}
-
-function resolveNotebookFsPath(notebookUri: vscode.Uri): string | undefined {
-  if (notebookUri.scheme === 'file') {
-    return notebookUri.fsPath;
-  }
-  if (notebookUri.scheme === 'git') {
-    return getFilePathFromUri(notebookUri) ?? notebookUri.fsPath;
-  }
   return undefined;
 }
 
@@ -263,8 +244,4 @@ function tryParseJsonStringLine(trimmed: string): string | undefined {
 
 function stripTrailingNewline(value: string): string {
   return value.endsWith('\n') ? value.slice(0, -1) : value;
-}
-
-export function notebookRelativePath(repoPath: string, notebookFsPath: string): string {
-  return path.relative(repoPath, notebookFsPath).split(path.sep).join('/');
 }

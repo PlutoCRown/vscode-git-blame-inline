@@ -1,33 +1,19 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { readFile } from 'fs/promises';
 import { GitService } from './gitService';
 import { DecorationProvider } from './decorationProvider';
 import { BlameHoverProvider } from './hoverProvider';
 import { BlameInfo, RemoteInfo } from './types';
 import { t } from './i18n';
-import { decodeDiffDocUri, DiffDocProvider } from './diffDocProvider';
 import {
   NOTEBOOK_CELL_SCHEME,
   buildNotebookCellSourceLineMaps,
   findNotebookCellRef,
-  mapFileBlameToCellBlame,
-  notebookRelativePath
+  mapFileBlameToCellBlame
 } from './notebookUtils';
-import {
-  GIT_GRAPH_SCHEME,
-  isLikelyBinaryDocument,
-  parseGitGraphDiffUri,
-  parseGitUriQuery
-} from './uriUtils';
+import { isLikelyBinaryPath } from './uriUtils';
 import { getBlameLineRange } from './rangeUtils';
-
-function isDiffRelatedScheme(scheme: string): boolean {
-  return scheme === 'git' ||
-    scheme === DiffDocProvider.scheme ||
-    scheme === GIT_GRAPH_SCHEME ||
-    scheme === NOTEBOOK_CELL_SCHEME;
-}
+import { ResolvedGitUri, UriResolverRegistry } from './uriResolverRegistry';
 
 const MAX_CACHE_KEYS_PER_DOCUMENT = 8;
 
@@ -46,6 +32,9 @@ export class BlameController {
     commit?: string;
     contents?: string;
     isRangeMode?: boolean;
+    workingTreePath: string;
+    isWorkingTree: boolean;
+    useDirtyDocumentContents?: boolean;
   }>();
   private documentCacheKeys = new Map<string, Set<string>>();
   private remoteCache = new Map<string, RemoteInfo | null>();
@@ -56,7 +45,11 @@ export class BlameController {
   private selectionUpdateTimeout: NodeJS.Timeout | undefined;
   private pendingSelectionEditors = new Set<vscode.TextEditor>();
 
-  constructor(context: vscode.ExtensionContext, gitService: GitService) {
+  constructor(
+    context: vscode.ExtensionContext,
+    gitService: GitService,
+    private readonly uriResolvers: UriResolverRegistry
+  ) {
     this.gitService = gitService;
     this.decorationProvider = new DecorationProvider();
 
@@ -86,13 +79,7 @@ export class BlameController {
 
     this.disposables.push(
       vscode.languages.registerHoverProvider(
-        [
-          { scheme: 'file' },
-          { scheme: DiffDocProvider.scheme },
-          { scheme: 'git' },
-          { scheme: GIT_GRAPH_SCHEME },
-          { scheme: NOTEBOOK_CELL_SCHEME }
-        ],
+        this.uriResolvers.getSchemes().map(scheme => ({ scheme })),
         hoverProvider
       )
     );
@@ -110,7 +97,9 @@ export class BlameController {
     // 稍延迟，避免与内置 Git 读取 blob / 二进制预览抢同一时机
     this.disposables.push(
       vscode.window.onDidChangeVisibleTextEditors(editors => {
-        const hasDiff = editors.some(e => isDiffRelatedScheme(e.document.uri.scheme));
+        const hasDiff = editors.some(e =>
+          this.uriResolvers.isDiffRelatedScheme(e.document.uri.scheme)
+        );
         if (!hasDiff) {
           return;
         }
@@ -154,7 +143,7 @@ export class BlameController {
         }
 
         const hasDiff = vscode.window.visibleTextEditors.some(
-          e => isDiffRelatedScheme(e.document.uri.scheme)
+          e => this.uriResolvers.isDiffRelatedScheme(e.document.uri.scheme)
         );
         const editors = hasDiff
           ? vscode.window.visibleTextEditors
@@ -212,7 +201,7 @@ export class BlameController {
     this.disposables.push(
       vscode.workspace.onDidSaveNotebookDocument(notebook => {
         this.clearNotebookCaches(notebook);
-        this.refreshNotebookEditors(notebook.uri.fsPath);
+        this.refreshNotebookEditors(notebook.uri);
       })
     );
 
@@ -224,7 +213,7 @@ export class BlameController {
           clearTimeout(this.updateTimeout);
         }
         this.updateTimeout = setTimeout(() => {
-          this.refreshNotebookEditors(event.notebook.uri.fsPath);
+          this.refreshNotebookEditors(event.notebook.uri);
         }, 200);
       })
     );
@@ -280,9 +269,9 @@ export class BlameController {
    */
   private updateVisibleDiffEditors(editor: vscode.TextEditor): void {
     const hasDiff = vscode.window.visibleTextEditors.some(
-      e => isDiffRelatedScheme(e.document.uri.scheme)
+      e => this.uriResolvers.isDiffRelatedScheme(e.document.uri.scheme)
     );
-    if (isDiffRelatedScheme(editor.document.uri.scheme) || hasDiff) {
+    if (this.uriResolvers.isDiffRelatedScheme(editor.document.uri.scheme) || hasDiff) {
       vscode.window.visibleTextEditors.forEach(e => this.updateBlame(e));
     } else {
       this.updateBlame(editor);
@@ -302,7 +291,7 @@ export class BlameController {
     }
 
     // 二进制 / 媒体文件不做 blame，也不去 git show 整文件，避免干扰内置 Diff 预览
-    if (isLikelyBinaryDocument(document)) {
+    if (this.isLikelyBinaryDocument(document)) {
       this.decorationProvider.clearDecorations(editor);
       return;
     }
@@ -340,7 +329,7 @@ export class BlameController {
         info.commit,
         cacheKey,
         info.contents ??
-        (document.uri.scheme === 'file' && document.isDirty ? document.getText() : undefined),
+        (info.useDirtyDocumentContents && document.isDirty ? document.getText() : undefined),
         lineRange
       );
 
@@ -362,7 +351,10 @@ export class BlameController {
 
       if (blameMap) {
         if (!document.isDirty) {
-          await this.applyUncommittedTimestamps(document, blameMap);
+          await this.applyUncommittedTimestampsForPath(
+            info.isWorkingTree ? info.workingTreePath : undefined,
+            blameMap
+          );
         }
         this.blameCache.set(cacheKey, blameMap);
         this.decorationProvider.updateDecorations(editor, blameMap);
@@ -386,14 +378,14 @@ export class BlameController {
       return;
     }
 
-    const repoPath = await this.gitService.getRepositoryRoot(ref.notebookFsPath);
-    if (!repoPath) {
+    const resolved = await this.uriResolvers.resolve(document.uri, document);
+    if (!resolved) {
       this.decorationProvider.clearDecorations(editor);
       return;
     }
 
-    const filePath = notebookRelativePath(repoPath, ref.notebookFsPath);
-    const target = await this.resolveNotebookBlameTarget(ref.notebook.uri, repoPath, filePath);
+    const { repoPath, filePath } = resolved;
+    const target = await this.materializeNotebookBlameTarget(ref.notebook, resolved);
     if (!target) {
       this.decorationProvider.clearDecorations(editor);
       return;
@@ -405,7 +397,9 @@ export class BlameController {
     this.documentInfoCache.set(document.uri.toString(), {
       cacheKey: cellCacheKey,
       repoPath,
-      filePath
+      filePath,
+      workingTreePath: target.workingTreePath,
+      isWorkingTree: target.isWorkingTree
     });
     this.trackDocumentCacheKey(
       this.getDocumentCacheTrackingKey(ref.notebook.uri),
@@ -448,7 +442,7 @@ export class BlameController {
       if (target.isWorkingTree) {
         const isDirty = target.isDirty || ref.notebook.isDirty || document.isDirty;
         if (!isDirty) {
-          await this.applyUncommittedTimestampsForPath(ref.notebookFsPath, cellBlame);
+          await this.applyUncommittedTimestampsForPath(target.workingTreePath, cellBlame);
         } else {
           for (const [line, info] of [...cellBlame.entries()]) {
             if (info.isUncommitted) {
@@ -465,10 +459,9 @@ export class BlameController {
     }
   }
 
-  private async resolveNotebookBlameTarget(
-    notebookUri: vscode.Uri,
-    repoPath: string,
-    filePath: string
+  private async materializeNotebookBlameTarget(
+    notebook: vscode.NotebookDocument,
+    resolved: ResolvedGitUri
   ): Promise<{
     raw: string;
     commit?: string;
@@ -476,61 +469,52 @@ export class BlameController {
     fileCacheKeySuffix: string;
     isWorkingTree: boolean;
     isDirty: boolean;
+    workingTreePath: string;
   } | null> {
-    if (notebookUri.scheme === 'file') {
+    if (resolved.contents !== undefined) {
+      return {
+        raw: resolved.contents,
+        contents: resolved.contents,
+        fileCacheKeySuffix: resolved.cacheKeySuffix,
+        isWorkingTree: resolved.isWorkingTree,
+        isDirty: false,
+        workingTreePath: resolved.workingTreePath
+      };
+    }
+
+    if (resolved.isWorkingTree) {
       let raw: string;
       try {
-        raw = await readFile(notebookUri.fsPath, 'utf8');
+        raw = await readFile(resolved.workingTreePath, 'utf8');
       } catch {
         return null;
       }
-      const notebook = vscode.workspace.notebookDocuments.find(
-        n => n.uri.toString() === notebookUri.toString()
-      );
       return {
         raw,
-        fileCacheKeySuffix: 'working-tree',
-        isWorkingTree: true,
-        isDirty: notebook?.isDirty ?? false
-      };
-    }
-
-    if (notebookUri.scheme === 'git') {
-      const { ref: queryRef } = parseGitUriQuery(notebookUri);
-      const resolved = await this.gitService.resolveGitUriBlameTarget(
-        repoPath,
-        filePath,
-        queryRef
-      );
-      if (!resolved) {
-        return null;
-      }
-
-      if (resolved.contents !== undefined) {
-        return {
-          raw: resolved.contents,
-          contents: resolved.contents,
-          fileCacheKeySuffix: resolved.cacheKeySuffix,
-          isWorkingTree: false,
-          isDirty: false
-        };
-      }
-
-      const commit = resolved.commit ?? 'HEAD';
-      const raw = await this.gitService.getFileContentsAtCommit(repoPath, filePath, commit);
-      if (raw === null) {
-        return null;
-      }
-      return {
-        raw,
-        commit,
         fileCacheKeySuffix: resolved.cacheKeySuffix,
-        isWorkingTree: false,
-        isDirty: false
+        isWorkingTree: true,
+        isDirty: notebook.isDirty,
+        workingTreePath: resolved.workingTreePath
       };
     }
 
-    return null;
+    const commit = resolved.commit ?? 'HEAD';
+    const raw = await this.gitService.getFileContentsAtCommit(
+      resolved.repoPath,
+      resolved.filePath,
+      commit
+    );
+    if (raw === null) {
+      return null;
+    }
+    return {
+      raw,
+      commit,
+      fileCacheKeySuffix: resolved.cacheKeySuffix,
+      isWorkingTree: false,
+      isDirty: false,
+      workingTreePath: resolved.workingTreePath
+    };
   }
 
   private updateActiveNotebookCellBlame(notebookEditor: vscode.NotebookEditor): void {
@@ -550,13 +534,13 @@ export class BlameController {
     }
   }
 
-  private refreshNotebookEditors(notebookFsPath: string): void {
+  private refreshNotebookEditors(notebookUri: vscode.Uri): void {
     for (const editor of vscode.window.visibleTextEditors) {
       if (editor.document.uri.scheme !== NOTEBOOK_CELL_SCHEME) {
         continue;
       }
       const ref = findNotebookCellRef(editor.document);
-      if (ref?.notebookFsPath === notebookFsPath) {
+      if (ref?.notebook.uri.toString() === notebookUri.toString()) {
         void this.updateBlame(editor);
       }
     }
@@ -572,14 +556,6 @@ export class BlameController {
     } else {
       this.remoteCache.set(repoPath, null);
     }
-  }
-
-  private async applyUncommittedTimestamps(
-    document: vscode.TextDocument,
-    blameMap: Map<number, BlameInfo>
-  ): Promise<void> {
-    const fsPath = document.uri.scheme === 'file' ? document.uri.fsPath : undefined;
-    await this.applyUncommittedTimestampsForPath(fsPath, blameMap);
   }
 
   private async applyUncommittedTimestampsForPath(
@@ -634,77 +610,39 @@ export class BlameController {
     commit?: string;
     contents?: string;
     isRangeMode?: boolean;
+    workingTreePath: string;
+    isWorkingTree: boolean;
+    useDirtyDocumentContents?: boolean;
   } | null> {
-    if (document.uri.scheme === 'file') {
-      const repoPath = await this.gitService.getRepositoryRoot(document.uri.fsPath);
-      if (!repoPath) {
-        return null;
-      }
-
-      const filePath = path.relative(repoPath, document.uri.fsPath);
-      return {
-        cacheKey: `${repoPath}::${filePath}::working-tree::v${document.version}`,
-        repoPath,
-        filePath
-      };
+    const resolved = await this.uriResolvers.resolve(document.uri, document);
+    if (!resolved) {
+      return null;
     }
 
-    if (document.uri.scheme === DiffDocProvider.scheme) {
-      const data = decodeDiffDocUri(document.uri);
-      if (!data.exists) {
-        return null;
-      }
-      return {
-        cacheKey: `${data.repo}::${data.filePath}::${data.commit}`,
-        repoPath: data.repo,
-        filePath: data.filePath,
-        commit: data.commit
-      };
+    const versionSuffix = resolved.cacheDocumentVersion
+      ? `::v${document.version}`
+      : '';
+    return {
+      cacheKey: `${resolved.repoPath}::${resolved.filePath}::${resolved.cacheKeySuffix}${versionSuffix}`,
+      repoPath: resolved.repoPath,
+      filePath: resolved.filePath,
+      commit: resolved.commit,
+      contents: resolved.contents,
+      workingTreePath: resolved.workingTreePath,
+      isWorkingTree: resolved.isWorkingTree,
+      useDirtyDocumentContents: resolved.useDirtyDocumentContents
+    };
+  }
+
+  private isLikelyBinaryDocument(document: vscode.TextDocument): boolean {
+    if (document.languageId === 'binary') {
+      return true;
     }
-
-    if (document.uri.scheme === GIT_GRAPH_SCHEME) {
-      const data = parseGitGraphDiffUri(document.uri);
-      if (!data?.exists) {
-        return null;
-      }
-      return {
-        cacheKey: `${data.repo}::${data.filePath}::${data.commit}`,
-        repoPath: data.repo,
-        filePath: data.filePath,
-        commit: data.commit
-      };
-    }
-
-    if (document.uri.scheme === 'git') {
-      const { path: queryPath, ref: queryRef } = parseGitUriQuery(document.uri);
-      const fsPath = queryPath ?? document.uri.fsPath;
-
-      // 二进制 git: 文档：不要 resolve（会 git show 整 blob）
-      if (isLikelyBinaryDocument(document)) {
-        return null;
-      }
-
-      const repoPath = await this.gitService.getRepositoryRoot(fsPath);
-      if (!repoPath) {
-        return null;
-      }
-
-      const filePath = path.relative(repoPath, fsPath).split(path.sep).join('/');
-      const target = await this.gitService.resolveGitUriBlameTarget(repoPath, filePath, queryRef);
-      if (!target) {
-        return null;
-      }
-
-      return {
-        cacheKey: `${repoPath}::${filePath}::${target.cacheKeySuffix}`,
-        repoPath,
-        filePath,
-        commit: target.commit,
-        contents: target.contents
-      };
-    }
-
-    return null;
+    const candidatePath =
+      this.uriResolvers.getPath(document.uri) ??
+      document.uri.fsPath ??
+      document.uri.path;
+    return isLikelyBinaryPath(candidatePath);
   }
 
   private getCacheKey(document: vscode.TextDocument): string | null {
@@ -716,7 +654,7 @@ export class BlameController {
   }
 
   private getDocumentCacheTrackingKey(uri: vscode.Uri): string {
-    return uri.scheme === 'file' ? uri.fsPath : uri.toString();
+    return uri.toString();
   }
 
   private trackDocumentCacheKey(documentKey: string, cacheKey: string): void {

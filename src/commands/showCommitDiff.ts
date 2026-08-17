@@ -2,24 +2,20 @@ import { execFile } from 'child_process';
 import * as path from 'path';
 import { promisify } from 'util';
 import * as vscode from 'vscode';
-import { decodeDiffDocUri, DiffDocProvider, encodeDiffDocUri } from '../diffDocProvider';
+import { encodeDiffDocUri } from '../diffDocProvider';
 import { getGitApi } from '../gitApi';
 import { GitService } from '../gitService';
 import { t } from '../i18n';
-import { findNotebookCellRef, NOTEBOOK_CELL_SCHEME } from '../notebookUtils';
 import { UNCOMMITTED_HASH } from '../types';
-import {
-  GIT_GRAPH_SCHEME,
-  getFilePathFromUri,
-  parseGitGraphDiffUri
-} from '../uriUtils';
+import { UriResolverRegistry } from '../uriResolverRegistry';
 
 const execFileAsync = promisify(execFile);
 const EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d34988fbee4904';
 
 export function registerShowCommitDiffCommand(
   context: vscode.ExtensionContext,
-  gitService: GitService
+  gitService: GitService,
+  uriResolvers: UriResolverRegistry
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -33,7 +29,7 @@ export function registerShowCommitDiffCommand(
           return;
         }
 
-        await showCommitDiff(gitService, hash, commitFilePath, previousFilePath);
+        await showCommitDiff(gitService, uriResolvers, hash, commitFilePath, previousFilePath);
       }
     )
   );
@@ -41,6 +37,7 @@ export function registerShowCommitDiffCommand(
 
 async function showCommitDiff(
   gitService: GitService,
+  uriResolvers: UriResolverRegistry,
   commitHash: string,
   pathAtCommit?: string,
   previousPath?: string
@@ -52,7 +49,7 @@ async function showCommitDiff(
       return;
     }
 
-    const resolved = await resolveDiffContext(editor, gitService);
+    const resolved = await resolveDiffContext(editor, uriResolvers);
     if (!resolved) {
       vscode.window.showErrorMessage(t.error.notInWorkspace);
       return;
@@ -120,72 +117,20 @@ async function pathExistsInCommit(
 
 async function resolveDiffContext(
   editor: vscode.TextEditor,
-  gitService: GitService
+  uriResolvers: UriResolverRegistry
 ): Promise<{
   cwd: string;
   relativeFilePath: string;
   workingTreeUri: vscode.Uri;
 } | null> {
-  const uri = editor.document.uri;
-
-  if (uri.scheme === DiffDocProvider.scheme) {
-    const data = decodeDiffDocUri(uri);
-    return data.exists
-      ? {
-          cwd: data.repo,
-          relativeFilePath: data.filePath,
-          workingTreeUri: vscode.Uri.file(path.join(data.repo, data.filePath))
-        }
-      : null;
-  }
-
-  if (uri.scheme === GIT_GRAPH_SCHEME) {
-    const data = parseGitGraphDiffUri(uri);
-    return data?.exists
-      ? {
-          cwd: data.repo,
-          relativeFilePath: data.filePath,
-          workingTreeUri: vscode.Uri.file(path.join(data.repo, data.filePath))
-        }
-      : null;
-  }
-
-  if (uri.scheme === NOTEBOOK_CELL_SCHEME) {
-    const cellRef = findNotebookCellRef(editor.document);
-    if (!cellRef) {
-      return null;
-    }
-    return resolveFileContext(cellRef.notebookFsPath, gitService);
-  }
-
-  if (uri.scheme === 'git') {
-    return resolveFileContext(getFilePathFromUri(uri) ?? uri.fsPath, gitService);
-  }
-
-  if (uri.scheme === 'file') {
-    return resolveFileContext(uri.fsPath, gitService, uri);
-  }
-
-  return null;
-}
-
-async function resolveFileContext(
-  filePath: string,
-  gitService: GitService,
-  workingTreeUri = vscode.Uri.file(filePath)
-): Promise<{
-  cwd: string;
-  relativeFilePath: string;
-  workingTreeUri: vscode.Uri;
-} | null> {
-  const repoPath = await gitService.getRepositoryRoot(filePath);
-  if (!repoPath) {
+  const resolved = await uriResolvers.resolve(editor.document.uri, editor.document);
+  if (!resolved) {
     return null;
   }
   return {
-    cwd: repoPath,
-    relativeFilePath: normalizeGitPath(path.relative(repoPath, filePath)),
-    workingTreeUri
+    cwd: resolved.repoPath,
+    relativeFilePath: resolved.filePath,
+    workingTreeUri: vscode.Uri.file(resolved.workingTreePath)
   };
 }
 
