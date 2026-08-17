@@ -120,7 +120,6 @@ function createNotebookCellResolver(options: DefaultUriResolverOptions): UriReso
   return {
     id: 'vscode-notebook-cell',
     schemes: [options.notebookCellScheme],
-    isDiffRelated: true,
     async resolve({ document }, context) {
       if (!document) {
         return null;

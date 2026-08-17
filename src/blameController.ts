@@ -97,10 +97,13 @@ export class BlameController {
     // 稍延迟，避免与内置 Git 读取 blob / 二进制预览抢同一时机
     this.disposables.push(
       vscode.window.onDidChangeVisibleTextEditors(editors => {
+        const hasNotebookCells = editors.some(
+          editor => editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME
+        );
         const hasDiff = editors.some(e =>
           this.uriResolvers.isDiffRelatedScheme(e.document.uri.scheme)
         );
-        if (!hasDiff) {
+        if (!hasDiff && !hasNotebookCells) {
           return;
         }
 
@@ -108,8 +111,16 @@ export class BlameController {
           clearTimeout(this.updateTimeout);
         }
         this.updateTimeout = setTimeout(() => {
-          for (const editor of vscode.window.visibleTextEditors) {
-            this.updateBlame(editor);
+          if (hasNotebookCells) {
+            this.synchronizeVisibleNotebookCellBlame();
+          }
+          if (hasDiff) {
+            for (const editor of vscode.window.visibleTextEditors) {
+              if (editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME) {
+                continue;
+              }
+              this.updateBlame(editor);
+            }
           }
         }, 250);
       })
@@ -126,10 +137,14 @@ export class BlameController {
     );
     this.disposables.push(
       vscode.window.onDidChangeActiveNotebookEditor(editor => {
-        if (!this.enabled || !editor) {
+        if (!this.enabled) {
           return;
         }
-        this.updateActiveNotebookCellBlame(editor);
+        if (editor) {
+          this.updateActiveNotebookCellBlame(editor);
+        } else {
+          this.clearInactiveVisibleNotebookCellDecorations();
+        }
       })
     );
 
@@ -142,11 +157,17 @@ export class BlameController {
           return;
         }
 
+        this.clearInactiveVisibleNotebookCellDecorations();
+
         const hasDiff = vscode.window.visibleTextEditors.some(
           e => this.uriResolvers.isDiffRelatedScheme(e.document.uri.scheme)
         );
         const editors = hasDiff
-          ? vscode.window.visibleTextEditors
+          ? vscode.window.visibleTextEditors.filter(
+              editor =>
+                editor.document.uri.scheme !== NOTEBOOK_CELL_SCHEME ||
+                this.isSelectedNotebookCell(editor.document.uri)
+            )
           : [event.textEditor];
 
         for (const editor of editors) {
@@ -268,6 +289,11 @@ export class BlameController {
    * 更新编辑器的 blame 信息
    */
   private updateVisibleDiffEditors(editor: vscode.TextEditor): void {
+    if (editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME) {
+      this.synchronizeVisibleNotebookCellBlame();
+      return;
+    }
+
     const hasDiff = vscode.window.visibleTextEditors.some(
       e => this.uriResolvers.isDiffRelatedScheme(e.document.uri.scheme)
     );
@@ -372,6 +398,11 @@ export class BlameController {
    */
   private async updateNotebookCellBlame(editor: vscode.TextEditor): Promise<void> {
     const document = editor.document;
+    if (!this.isSelectedNotebookCell(document.uri)) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
+
     const ref = findNotebookCellRef(document);
     if (!ref) {
       this.decorationProvider.clearDecorations(editor);
@@ -387,6 +418,10 @@ export class BlameController {
     const { repoPath, filePath } = resolved;
     const target = await this.materializeNotebookBlameTarget(ref.notebook, resolved);
     if (!target) {
+      this.decorationProvider.clearDecorations(editor);
+      return;
+    }
+    if (!this.isSelectedNotebookCell(document.uri)) {
       this.decorationProvider.clearDecorations(editor);
       return;
     }
@@ -430,6 +465,11 @@ export class BlameController {
         return;
       }
 
+      if (!this.isSelectedNotebookCell(document.uri)) {
+        this.decorationProvider.clearDecorations(editor);
+        return;
+      }
+
       await this.ensureRemoteCached(repoPath);
 
       if (!fileBlame) {
@@ -450,6 +490,11 @@ export class BlameController {
             }
           }
         }
+      }
+
+      if (!this.isSelectedNotebookCell(document.uri)) {
+        this.decorationProvider.clearDecorations(editor);
+        return;
       }
 
       this.blameCache.set(cellCacheKey, cellBlame);
@@ -518,32 +563,72 @@ export class BlameController {
   }
 
   private updateActiveNotebookCellBlame(notebookEditor: vscode.NotebookEditor): void {
-    const selection = notebookEditor.selections[0];
-    if (!selection) {
-      return;
-    }
-    const cell = notebookEditor.notebook.cellAt(selection.start);
-    const cellUri = cell.document.uri.toString();
-    const editor =
-      vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === cellUri) ??
-      (vscode.window.activeTextEditor?.document.uri.toString() === cellUri
-        ? vscode.window.activeTextEditor
-        : undefined);
-    if (editor) {
-      void this.updateBlame(editor);
-    }
+    void notebookEditor;
+    this.synchronizeVisibleNotebookCellBlame();
   }
 
   private refreshNotebookEditors(notebookUri: vscode.Uri): void {
+    void notebookUri;
+    this.synchronizeVisibleNotebookCellBlame();
+  }
+
+  /** Keep decorations only on the selected cell of each visible NotebookEditor. */
+  private synchronizeVisibleNotebookCellBlame(): void {
+    const selectedCellUris = this.clearInactiveVisibleNotebookCellDecorations();
     for (const editor of vscode.window.visibleTextEditors) {
-      if (editor.document.uri.scheme !== NOTEBOOK_CELL_SCHEME) {
-        continue;
-      }
-      const ref = findNotebookCellRef(editor.document);
-      if (ref?.notebook.uri.toString() === notebookUri.toString()) {
+      if (
+        editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
+        selectedCellUris.has(editor.document.uri.toString())
+      ) {
         void this.updateBlame(editor);
       }
     }
+  }
+
+  private clearInactiveVisibleNotebookCellDecorations(): Set<string> {
+    const selectedCellUris = this.getSelectedNotebookCellUris();
+
+    for (const editor of [...this.pendingSelectionEditors]) {
+      if (
+        editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
+        !selectedCellUris.has(editor.document.uri.toString())
+      ) {
+        this.pendingSelectionEditors.delete(editor);
+      }
+    }
+
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (
+        editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
+        !selectedCellUris.has(editor.document.uri.toString())
+      ) {
+        this.decorationProvider.clearDecorations(editor);
+      }
+    }
+
+    return selectedCellUris;
+  }
+
+  private getSelectedNotebookCellUris(): Set<string> {
+    const selectedCellUris = new Set<string>();
+    for (const notebookEditor of vscode.window.visibleNotebookEditors) {
+      const selection = notebookEditor.selections[0];
+      if (
+        !selection ||
+        selection.start < 0 ||
+        selection.start >= notebookEditor.notebook.cellCount
+      ) {
+        continue;
+      }
+      selectedCellUris.add(
+        notebookEditor.notebook.cellAt(selection.start).document.uri.toString()
+      );
+    }
+    return selectedCellUris;
+  }
+
+  private isSelectedNotebookCell(cellUri: vscode.Uri): boolean {
+    return this.getSelectedNotebookCellUris().has(cellUri.toString());
   }
 
   private async ensureRemoteCached(repoPath: string): Promise<void> {
@@ -580,6 +665,15 @@ export class BlameController {
   }
 
   private updateDecorationsFromCachedBlame(editor: vscode.TextEditor): boolean {
+    if (
+      editor.document.uri.scheme === NOTEBOOK_CELL_SCHEME &&
+      !this.isSelectedNotebookCell(editor.document.uri)
+    ) {
+      this.pendingSelectionEditors.delete(editor);
+      this.decorationProvider.clearDecorations(editor);
+      return true;
+    }
+
     const docInfo = this.documentInfoCache.get(editor.document.uri.toString());
     if (!docInfo) {
       return false;

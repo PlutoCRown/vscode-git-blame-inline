@@ -143,6 +143,12 @@ describe('UriResolverRegistry default adapters', () => {
     expect(await registry.resolve(missing)).toBeNull();
     expect(await registry.resolve(malformed)).toBeNull();
   });
+
+  test('does not treat every notebook cell as a Diff editor', () => {
+    const registry = createDefaultRegistry();
+
+    expect(registry.isDiffRelatedScheme('vscode-notebook-cell')).toBe(false);
+  });
 });
 
 describe('UriResolverRegistry extension behavior', () => {

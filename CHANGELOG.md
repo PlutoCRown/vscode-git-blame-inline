@@ -6,6 +6,7 @@
 
 ### Fixes
 - Fix Jupyter notebook blame selecting an adjacent cell's `source` when large outputs place the current cell's `source` far from its `id`.
+- Clear blame from inactive Jupyter notebook cells and prevent stale asynchronous updates from restoring their decorations.
 
 ### Improvements
 - Reduce the extension package size.
